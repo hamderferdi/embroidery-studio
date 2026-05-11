@@ -158,9 +158,19 @@ export class ViewportController {
     this.objects_ = objects
     this.embroidery.setZoom(this.viewport.scale.x)
     this.embroidery.syncObjects(objects)
-    // Keep node-edit layer in sync when in direct-select mode
+
+    // Keep node-edit layer geometry in sync via syncObjects (NOT setObjects) —
+    // syncObjects rebuilds entries but preserves drag state and selection.
     if (this.isDirectSelect_) {
       this.nodeEdit.syncObjects(objects, this.viewport.scale.x)
+    }
+    if (this.isNodeEdit_) {
+      // For node-edit, only show the selected object
+      const { selectedIds } = useEmbroideryStore.getState()
+      if (selectedIds.length === 1) {
+        const obj = objects.find(o => o.id === selectedIds[0])
+        if (obj) this.nodeEdit.syncObjects([obj], this.viewport.scale.x)
+      }
     }
   }
 
@@ -325,7 +335,9 @@ export class ViewportController {
     // ── Node / direct-select ─────────────────────────────────────────────────
     if (this.isNodeEdit_ || this.isDirectSelect_) {
       this.nodeEdit.onPointerMove(world, zoom, e.altKey)
-      if (this.isNodeEdit_) this.embroidery.rerenderAll(this.objects_)
+      // Stitch re-render happens via the liveUpdate → syncObjects path through React.
+      // Call rerenderAll here too so the canvas updates the same frame (no 1-frame lag).
+      this.embroidery.rerenderAll(this.objects_)
       return
     }
 

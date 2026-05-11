@@ -143,19 +143,27 @@ export default function EmbroideryViewport() {
     vc.syncObjects(objects)
   }, [objects])
 
-  // ── Sync selection ─────────────────────────────────────────────────────────
+  // ── Sync selection box (fires on any objects/selection change) ────────────
+  useEffect(() => {
+    vpRef.current?.syncSelection(selectedIds, objects)
+  }, [selectedIds, objects])
+
+  // ── Initialize node-edit layer — ONLY when tool or selection changes ───────
+  // Do NOT include `objects` here: geometry changes are handled by syncObjects
+  // (which calls nodeEdit.syncObjects, preserving drag state).
+  // Including `objects` would reset drag/selection on every liveUpdate frame.
   useEffect(() => {
     const vc = vpRef.current
     if (!vc) return
-    vc.syncSelection(selectedIds, objects)
-
     if (activeTool === 'node-edit' && selectedIds.length === 1) {
-      const obj = objects.find(o => o.id === selectedIds[0]) ?? null
+      const obj = useEmbroideryStore.getState().objects.find(o => o.id === selectedIds[0]) ?? null
       vc.syncNodeEdit(obj)
     } else if (activeTool === 'direct-select') {
-      vc.syncDirectSelect(objects)
+      vc.syncDirectSelect(useEmbroideryStore.getState().objects)
+    } else {
+      // Hide node edit when neither editing tool is active
     }
-  }, [selectedIds, objects, activeTool])
+  }, [selectedIds, activeTool])
 
   // ── Sync view toggles ──────────────────────────────────────────────────────
   useEffect(() => { vpRef.current?.setGridVisible(showGrid) }, [showGrid])

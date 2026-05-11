@@ -147,17 +147,32 @@ export class NodeEditLayer {
     this.redraw()
   }
 
-  /** Update the working copies (e.g. after external store update) */
+  /** Update the working copies (e.g. after external store update, undo/redo). */
   syncObjects(objs: EmbroideryObject[], zoom: number) {
     this.zoom_ = zoom
-    // Merge: keep existing selection, update path data from store
+
     const newEntries = buildEntries(objs)
-    const prevById   = new Map(this.entries.map(e => [`${e.obj.id}:${e.field}`, e]))
-    this.entries = newEntries.map(e => {
-      const key = `${e.obj.id}:${e.field}`
-      const prev = prevById.get(key)
-      return prev ? { ...e, path: { ...e.path } } : e
-    })
+
+    if (this.drag !== null) {
+      // A drag is in progress — keep the current entry paths (which are ahead
+      // of the store by one liveUpdate frame).  Only add/remove entries for
+      // objects that appear/disappear; don't overwrite geometry mid-drag.
+      const prevByKey = new Map(this.entries.map(e => [`${e.obj.id}:${e.field}`, e]))
+      this.entries = newEntries.map(e => {
+        const key  = `${e.obj.id}:${e.field}`
+        const prev = prevByKey.get(key)
+        return prev ?? e   // keep the in-progress path if it exists
+      })
+    } else {
+      // No drag — refresh path data from store (handles undo/redo, external updates)
+      const prevByKey = new Map(this.entries.map(e => [`${e.obj.id}:${e.field}`, e]))
+      this.entries = newEntries.map(e => {
+        const key = `${e.obj.id}:${e.field}`
+        prevByKey.get(key)  // (referenced to keep selectedNodes valid)
+        return e
+      })
+    }
+
     this.container.visible = this.entries.length > 0
     this.redraw()
   }
