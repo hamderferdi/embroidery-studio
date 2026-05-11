@@ -1,8 +1,10 @@
 import type { StitchPair, RunStitchObject } from '../types'
-import { walkPolyline, lerpPoint } from './math'
+import { walkPolyline } from './math'
+import { flattenBezierPath } from '../geometry/BezierMath'
 
 export function generateRunStitch(obj: RunStitchObject): StitchPair[] {
-  const { path, stitchLength, passes } = obj
+  const { stitchLength, passes } = obj
+  const path = flattenBezierPath(obj.path)
   if (path.length < 2) return []
 
   const stitches: StitchPair[] = []

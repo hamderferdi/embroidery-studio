@@ -1,5 +1,6 @@
 import type { Point, StitchPair, SatinFillObject } from '../types'
 import { rotatePoint, scanlineIntersect, polyBounds } from './math'
+import { flattenBezierPath } from '../geometry/BezierMath'
 
 /**
  * Generates satin-fill stitches for a closed polygon boundary.
@@ -7,7 +8,8 @@ import { rotatePoint, scanlineIntersect, polyBounds } from './math'
  * Stitches alternate direction each row for efficient travel.
  */
 export function generateSatinFill(obj: SatinFillObject): StitchPair[] {
-  const { boundary, stitchAngle, density } = obj
+  const { stitchAngle, density } = obj
+  const boundary = flattenBezierPath(obj.boundary)
   if (boundary.length < 3) return []
 
   const angleRad = (stitchAngle * Math.PI) / 180

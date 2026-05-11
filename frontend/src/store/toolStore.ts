@@ -2,7 +2,9 @@ import { create } from 'zustand'
 
 export type ToolId =
   | 'select'
+  | 'direct-select'
   | 'pan'
+  | 'pen'
   | 'satin-column'
   | 'satin-fill'
   | 'tatami-fill'

@@ -22,12 +22,36 @@ const TOOLS: ToolDef[] = [
     group: 'transform',
   },
   {
+    id: 'direct-select', label: 'A', title: 'Direct Select — edit nodes (A)',
+    // White arrow (hollow) — classic Illustrator direct-select icon
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M3 2l10 5-5.5 1.5L6 14 3 2z"
+          stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"
+          fill="none"/>
+      </svg>
+    ),
+    group: 'transform',
+  },
+  {
     id: 'pan', label: 'H', title: 'Pan (H / Hold Space)',
     icon: <Icon d="M8 2v2M8 12v2M2 8h2M12 8h2M5 5l1 1M10 10l1 1M5 11l1-1M10 6l1-1" />,
     group: 'transform',
   },
   {
-    id: 'node-edit', label: 'A', title: 'Node Edit (A)',
+    id: 'pen', label: 'P', title: 'Pen — draw Bézier paths (P)',
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 13 C4 9 9 5 13 3"/>
+        <circle cx="13" cy="3" r="1.5" fill="currentColor" stroke="none"/>
+        <circle cx="3"  cy="13" r="1.5" fill="currentColor" stroke="none"/>
+        <line x1="13" y1="3" x2="10" y2="6" strokeDasharray="2 2"/>
+      </svg>
+    ),
+    group: 'transform',
+  },
+  {
+    id: 'node-edit', label: 'N', title: 'Node Edit — selected object only (N)',
     icon: <Icon d="M3 13L8 3l5 10H3z" />,
     group: 'transform',
   },

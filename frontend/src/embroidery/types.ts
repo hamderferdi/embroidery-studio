@@ -5,6 +5,34 @@ export interface Point {
   y: number
 }
 
+/**
+ * A single Bézier anchor point.
+ *  type 'corner'    – sharp corner, no active handles
+ *  type 'smooth'    – handles collinear, independent lengths
+ *  type 'symmetric' – handles collinear, equal lengths (Illustrator "smooth")
+ * hi / ho are offsets from the anchor in world units.
+ */
+export interface BezierPoint {
+  x: number
+  y: number
+  type: 'corner' | 'smooth' | 'symmetric'
+  hi?: Point   // handle-in offset
+  ho?: Point   // handle-out offset
+}
+
+export interface BezierPath {
+  points: BezierPoint[]
+  closed: boolean
+}
+
+/** Wrap a Point[] as a corner-only BezierPath */
+export function ptsToBezier(pts: Point[], closed = false): BezierPath {
+  return {
+    points: pts.map(p => ({ x: p.x, y: p.y, type: 'corner' as const })),
+    closed,
+  }
+}
+
 /** A single stitch: needle-down to needle-up */
 export type StitchPair = [Point, Point]
 
@@ -90,27 +118,27 @@ export interface BoundingBox {
 
 export interface SatinColumnObject extends EmbroideryObjectBase {
   type: 'satin-column'
-  leftPath: Point[]
-  rightPath: Point[]
+  leftPath:  BezierPath
+  rightPath: BezierPath
 }
 
 export interface SatinFillObject extends EmbroideryObjectBase {
   type: 'satin-fill'
-  boundary: Point[]
+  boundary: BezierPath
 }
 
 export interface TatamiFillObject extends EmbroideryObjectBase {
   type: 'tatami-fill'
-  boundary: Point[]
-  rowOffset: number  // 0–1
-  stitchRows: number // alternating direction rows
+  boundary:   BezierPath
+  rowOffset:  number  // 0–1
+  stitchRows: number  // alternating direction rows
 }
 
 export interface RunStitchObject extends EmbroideryObjectBase {
   type: 'run-stitch'
-  path: Point[]
+  path:         BezierPath
   stitchLength: number
-  passes: number
+  passes:       number
 }
 
 export interface ManualStitchObject extends EmbroideryObjectBase {

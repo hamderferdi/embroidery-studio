@@ -1,5 +1,6 @@
 import type { Point, StitchPair, SatinColumnObject } from '../types'
 import { dist, lerpPoint } from './math'
+import { flattenBezierPath } from '../geometry/BezierMath'
 
 /**
  * Generates satin column stitches between two parallel paths.
@@ -7,7 +8,9 @@ import { dist, lerpPoint } from './math'
  * The density controls how many stitches per unit length.
  */
 export function generateSatinColumn(obj: SatinColumnObject): StitchPair[] {
-  const { leftPath, rightPath, density } = obj
+  const leftPath  = flattenBezierPath(obj.leftPath)
+  const rightPath = flattenBezierPath(obj.rightPath)
+  const { density } = obj
   if (leftPath.length < 2 || rightPath.length < 2) return []
 
   // Compute total arc length for each path

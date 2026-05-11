@@ -2,9 +2,9 @@ import { create } from 'zustand'
 import { v4 as uuid } from 'uuid'
 import type {
   EmbroideryObject, ThreadColor, TatamiFillObject,
-  SatinFillObject, SatinColumnObject, RunStitchObject, Point,
+  SatinFillObject, SatinColumnObject, RunStitchObject, Point, BezierPath,
 } from '../embroidery/types'
-import { defaultObjectBase, THREAD_PALETTE } from '../embroidery/types'
+import { defaultObjectBase, THREAD_PALETTE, ptsToBezier } from '../embroidery/types'
 import { generateStitches } from '../embroidery/EmbroideryEngine'
 import { PX_PER_MM } from './canvasStore'
 
@@ -24,6 +24,8 @@ export interface EmbroideryState {
   addObject:       (obj: EmbroideryObject) => void
   removeObject:    (id: string) => void
   updateObject:    (id: string, patch: Partial<EmbroideryObject>) => void
+  /** Update geometry without creating a history entry (used during live node drag) */
+  liveUpdate:      (id: string, patch: Partial<EmbroideryObject>) => void
   selectObject:    (id: string, multi?: boolean) => void
   clearSelection:  () => void
   setActiveColor:  (c: ThreadColor) => void
@@ -37,9 +39,9 @@ export interface EmbroideryState {
   moveObjects:             (ids: string[], dx: number, dy: number) => void
 
   // called by drawing tools to create a new object from a drawn shape
-  createFillFromBoundary:  (boundary: Point[], type: 'satin-fill' | 'tatami-fill') => void
-  createRunFromPath:       (path: Point[]) => void
-  createColumnFromPaths:   (left: Point[], right: Point[]) => void
+  createFillFromBoundary:  (boundary: BezierPath, type: 'satin-fill' | 'tatami-fill') => void
+  createRunFromPath:       (path: BezierPath) => void
+  createColumnFromPaths:   (left: BezierPath, right: BezierPath) => void
 }
 
 function regenObject(obj: EmbroideryObject): EmbroideryObject {
@@ -99,6 +101,16 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
 
   updateObject: (id, patch) => {
     withHistory(set, get, (s) => {
+      const objects = s.objects.map(o => {
+        if (o.id !== id) return o
+        return regenObject({ ...o, ...patch, needsRegenerate: true } as EmbroideryObject)
+      })
+      return { objects, stitchCount: countStitches(objects) }
+    })
+  },
+
+  liveUpdate: (id, patch) => {
+    set((s) => {
       const objects = s.objects.map(o => {
         if (o.id !== id) return o
         return regenObject({ ...o, ...patch, needsRegenerate: true } as EmbroideryObject)
@@ -172,16 +184,19 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
 
   moveObjects: (ids, dx, dy) => {
     withHistory(set, get, (s) => {
-      const shift = (pts: Point[]) => pts.map(p => ({ x: p.x + dx, y: p.y + dy }))
+      const shiftPath = (bp: BezierPath): BezierPath => ({
+        ...bp,
+        points: bp.points.map(p => ({ ...p, x: p.x + dx, y: p.y + dy })),
+      })
       const objects = s.objects.map(o => {
         if (!ids.includes(o.id)) return o
         let patched = { ...o }
         if (o.type === 'satin-fill' || o.type === 'tatami-fill') {
-          patched = { ...o, boundary: shift((o as SatinFillObject | TatamiFillObject).boundary) }
+          patched = { ...o, boundary: shiftPath((o as SatinFillObject | TatamiFillObject).boundary) }
         } else if (o.type === 'run-stitch') {
-          patched = { ...o, path: shift((o as RunStitchObject).path) }
+          patched = { ...o, path: shiftPath((o as RunStitchObject).path) }
         } else if (o.type === 'satin-column') {
-          patched = { ...o, leftPath: shift((o as SatinColumnObject).leftPath), rightPath: shift((o as SatinColumnObject).rightPath) }
+          patched = { ...o, leftPath: shiftPath((o as SatinColumnObject).leftPath), rightPath: shiftPath((o as SatinColumnObject).rightPath) }
         }
         return regenObject({ ...patched, needsRegenerate: true } as EmbroideryObject)
       })
@@ -225,7 +240,7 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
     const ringObj: RunStitchObject = {
       id: uuid(), type: 'run-stitch', name: 'Ring Border',
       ...defaultObjectBase({ color: THREAD_PALETTE[3], density: 0.5, stitchLength: 2.5 }),
-      path: ringPts, stitchLength: 2.5, passes: 1,
+      path: ptsToBezier(ringPts), stitchLength: 2.5, passes: 1,
     } as RunStitchObject
 
     const fillRadius = 40 * R
@@ -236,7 +251,7 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
     const fillObj: TatamiFillObject = {
       id: uuid(), type: 'tatami-fill', name: 'Center Fill',
       ...defaultObjectBase({ color: THREAD_PALETTE[9], stitchAngle: 45, density: 0.42 }),
-      boundary: fillPts, rowOffset: 0.5, stitchRows: 2, stitchLength: 4,
+      boundary: ptsToBezier(fillPts, true), rowOffset: 0.5, stitchRows: 2, stitchLength: 4,
     } as TatamiFillObject
 
     const leaves = [0, 60, 120, 180, 240, 300].map((deg, i) => {
@@ -247,7 +262,7 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
       const by = Math.sin(a) * 20 * R
       const w = 10 * R
       const perp = { x: -Math.sin(a), y: Math.cos(a) }
-      const boundary = [
+      const boundaryPts = [
         { x: bx + perp.x * w, y: by + perp.y * w },
         { x: tipX, y: tipY },
         { x: bx - perp.x * w, y: by - perp.y * w },
@@ -256,7 +271,7 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
       return {
         id: uuid(), type: 'satin-fill' as const, name: `Leaf ${i + 1}`,
         ...defaultObjectBase({ color: i % 2 === 0 ? THREAD_PALETTE[7] : THREAD_PALETTE[8], stitchAngle: (deg + 90) % 180, density: 0.38 }),
-        boundary,
+        boundary: ptsToBezier(boundaryPts, true),
       } as SatinFillObject
     })
 
@@ -265,9 +280,9 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
       const a0 = (i / 8) * Math.PI * 2
       const a1 = ((i + 1) / 8) * Math.PI * 2
       const w = 4 * R, r0 = colRadius - w / 2, r1 = colRadius + w / 2
-      const left  = Array.from({ length: 8 }, (__, s) => { const a = a0 + (a1 - a0) * s / 7; return { x: Math.cos(a) * r0, y: Math.sin(a) * r0 } })
-      const right = Array.from({ length: 8 }, (__, s) => { const a = a0 + (a1 - a0) * s / 7; return { x: Math.cos(a) * r1, y: Math.sin(a) * r1 } })
-      return { id: uuid(), type: 'satin-column' as const, name: `Spoke ${i + 1}`, ...defaultObjectBase({ color: THREAD_PALETTE[3], density: 0.35 }), leftPath: left, rightPath: right } as SatinColumnObject
+      const leftPts  = Array.from({ length: 8 }, (__, s) => { const a = a0 + (a1 - a0) * s / 7; return { x: Math.cos(a) * r0, y: Math.sin(a) * r0 } })
+      const rightPts = Array.from({ length: 8 }, (__, s) => { const a = a0 + (a1 - a0) * s / 7; return { x: Math.cos(a) * r1, y: Math.sin(a) * r1 } })
+      return { id: uuid(), type: 'satin-column' as const, name: `Spoke ${i + 1}`, ...defaultObjectBase({ color: THREAD_PALETTE[3], density: 0.35 }), leftPath: ptsToBezier(leftPts), rightPath: ptsToBezier(rightPts) } as SatinColumnObject
     })
 
     const allObjects: EmbroideryObject[] = [fillObj, ...satinCols, ...leaves, ringObj]

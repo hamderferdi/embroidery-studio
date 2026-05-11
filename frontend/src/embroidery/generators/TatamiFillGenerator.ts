@@ -1,5 +1,6 @@
 import type { StitchPair, TatamiFillObject, Point } from '../types'
 import { rotatePoint, scanlineIntersect, polyBounds } from './math'
+import { flattenBezierPath } from '../geometry/BezierMath'
 
 /**
  * Tatami (fill) stitch generation.
@@ -7,11 +8,12 @@ import { rotatePoint, scanlineIntersect, polyBounds } from './math'
  * Creates a woven, fabric-like fill texture.
  */
 export function generateTatamiFill(obj: TatamiFillObject): StitchPair[] {
-  const { boundary, stitchAngle, density, stitchLength, rowOffset } = obj
+  const { stitchAngle, density, stitchLength, rowOffset } = obj
+  const boundary = flattenBezierPath(obj.boundary)
   if (boundary.length < 3) return []
 
   const angleRad = (stitchAngle * Math.PI) / 180
-  const rotated = boundary.map(p => rotatePoint(p, -angleRad))
+  const rotated  = boundary.map(p => rotatePoint(p, -angleRad))
   const { minY, maxY } = polyBounds(rotated)
 
   const stitches: StitchPair[] = []

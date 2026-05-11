@@ -5,15 +5,21 @@ import { useCanvasStore, HOOP_SIZES } from '../../store/canvasStore'
 import { useEmbroideryStore } from '../../store/embroideryStore'
 import { useToolStore, type ToolId } from '../../store/toolStore'
 import type { DrawMode } from '../layers/DrawingLayer'
+import type { PenMode } from '../layers/PenLayer'
+import { ptsToBezier } from '../../embroidery/types'
 
 PIXI.settings.ROUND_PIXELS = false
 
+/** Existing polygon/polyline drawing tools (DrawingLayer) */
 const DRAW_TOOLS: Partial<Record<ToolId, DrawMode>> = {
   'satin-fill':   'polygon',
   'tatami-fill':  'polygon',
   'run-stitch':   'polyline',
   'satin-column': 'column',
 }
+
+/** Pen tool mode — currently pen always draws a polyline (run-stitch path) */
+const PEN_MODE: PenMode = 'polyline'
 
 export default function EmbroideryViewport() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -28,7 +34,7 @@ export default function EmbroideryViewport() {
   const {
     objects, selectedIds, clearSelection, selectObject,
     createFillFromBoundary, createRunFromPath, createColumnFromPaths,
-    undo, redo, canUndo, canRedo, updateObject, moveObjects, removeObject,
+    undo, redo, updateObject, liveUpdate, moveObjects, removeObject,
   } = useEmbroideryStore()
 
   const { activeTool, setTool, setTemporaryPan } = useToolStore()
@@ -64,27 +70,44 @@ export default function EmbroideryViewport() {
         const tool  = useToolStore.getState().activeTool
         if (mode === 'polygon') {
           const type = tool === 'tatami-fill' ? 'tatami-fill' : 'satin-fill'
-          store.createFillFromBoundary(leftPts, type)
+          store.createFillFromBoundary(ptsToBezier(leftPts, true), type)
         } else if (mode === 'polyline') {
-          store.createRunFromPath(leftPts)
+          store.createRunFromPath(ptsToBezier(leftPts))
         } else if (mode === 'column') {
-          store.createColumnFromPaths(leftPts, rightPts)
+          store.createColumnFromPaths(ptsToBezier(leftPts), ptsToBezier(rightPts))
         }
-        // Return to select tool after drawing
         useToolStore.getState().setTool('select')
+      },
+
+      onPenComplete: (_mode, path) => {
+        // Pen tool currently creates a run-stitch
+        useEmbroideryStore.getState().createRunFromPath(path)
+        useToolStore.getState().setTool('select')
+      },
+
+      onNodeLiveChange: (id, _field, path) => {
+        // Determine which field changed and call liveUpdate
+        const obj = useEmbroideryStore.getState().objects.find(o => o.id === id)
+        if (!obj) return
+        const patch: Record<string, unknown> = {}
+        if (_field === 'boundary')  patch.boundary  = path
+        if (_field === 'path')      patch.path      = path
+        if (_field === 'leftPath')  patch.leftPath  = path
+        if (_field === 'rightPath') patch.rightPath = path
+        useEmbroideryStore.getState().liveUpdate(id, patch as never)
+      },
+
+      onNodeCommit: (id, _field, path) => {
+        const patch: Record<string, unknown> = {}
+        if (_field === 'boundary')  patch.boundary  = path
+        if (_field === 'path')      patch.path      = path
+        if (_field === 'leftPath')  patch.leftPath  = path
+        if (_field === 'rightPath') patch.rightPath = path
+        useEmbroideryStore.getState().updateObject(id, patch as never)
       },
 
       onObjectMove: (ids, dx, dy) => {
         useEmbroideryStore.getState().moveObjects(ids, dx, dy)
-      },
-
-      onNodeChange: (id, field, pts) => {
-        const patch: Record<string, unknown> = {}
-        if (field === 'boundary')  patch.boundary  = pts
-        if (field === 'path')      patch.path       = pts
-        if (field === 'leftPath')  patch.leftPath   = pts
-        if (field === 'rightPath') patch.rightPath  = pts
-        useEmbroideryStore.getState().updateObject(id, patch as never)
       },
     })
     vpRef.current = vc
@@ -114,15 +137,23 @@ export default function EmbroideryViewport() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sync objects ───────────────────────────────────────────────────────────
-  useEffect(() => { vpRef.current?.syncObjects(objects) }, [objects])
+  useEffect(() => {
+    const vc = vpRef.current
+    if (!vc) return
+    vc.syncObjects(objects)
+  }, [objects])
 
   // ── Sync selection ─────────────────────────────────────────────────────────
   useEffect(() => {
-    vpRef.current?.syncSelection(selectedIds, objects)
-    // Sync node-edit layer with selected object
+    const vc = vpRef.current
+    if (!vc) return
+    vc.syncSelection(selectedIds, objects)
+
     if (activeTool === 'node-edit' && selectedIds.length === 1) {
       const obj = objects.find(o => o.id === selectedIds[0]) ?? null
-      vpRef.current?.syncNodeEdit(obj)
+      vc.syncNodeEdit(obj)
+    } else if (activeTool === 'direct-select') {
+      vc.syncDirectSelect(objects)
     }
   }, [selectedIds, objects, activeTool])
 
@@ -131,26 +162,32 @@ export default function EmbroideryViewport() {
   useEffect(() => { vpRef.current?.updateHoop(HOOP_SIZES[hoopSize], showHoop) }, [hoopSize, showHoop])
   useEffect(() => { vpRef.current?.updateFabricColor(fabricColor) }, [fabricColor])
 
-  // ── Activate drawing / node-edit / pan on tool change ────────────────────
+  // ── Activate tools on activeTool change ───────────────────────────────────
   useEffect(() => {
     const vc = vpRef.current
     if (!vc) return
 
     const drawMode = DRAW_TOOLS[activeTool]
 
+    // Stop modes that are no longer active
+    if (!drawMode) vc.stopDrawMode()
+    if (activeTool !== 'node-edit') vc.stopNodeEdit()
+    if (activeTool !== 'direct-select') vc.stopDirectSelect()
+    if (activeTool !== 'pen') vc.stopPen()
+
+    // Start the new active mode
     if (drawMode) {
       vc.startDrawMode(drawMode)
-    } else {
-      vc.stopDrawMode()
-    }
-
-    if (activeTool === 'node-edit') {
+    } else if (activeTool === 'node-edit') {
       vc.startNodeEdit()
       const { selectedIds: ids, objects: objs } = useEmbroideryStore.getState()
       const obj = ids.length === 1 ? (objs.find(o => o.id === ids[0]) ?? null) : null
       vc.syncNodeEdit(obj)
-    } else {
-      vc.stopNodeEdit()
+    } else if (activeTool === 'direct-select') {
+      vc.startDirectSelect()
+      vc.syncDirectSelect(useEmbroideryStore.getState().objects)
+    } else if (activeTool === 'pen') {
+      vc.startPen(PEN_MODE)
     }
 
     vc.setPanMode(activeTool === 'pan')
@@ -182,10 +219,10 @@ export default function EmbroideryViewport() {
       }
     }
 
-    // Cancel drawing with Escape
+    // Cancel drawing / pen with Escape
     if (e.key === 'Escape') {
       const tool = useToolStore.getState().activeTool
-      if (DRAW_TOOLS[tool]) { setTool('select'); return }
+      if (DRAW_TOOLS[tool] || tool === 'pen') { setTool('select'); return }
       clearSelection()
       return
     }
@@ -193,7 +230,9 @@ export default function EmbroideryViewport() {
     // Tool shortcuts
     if (!meta && !e.altKey && e.target === document.body) {
       const map: Record<string, ToolId> = {
-        v: 'select', h: 'pan', a: 'node-edit',
+        v: 'select', a: 'direct-select', h: 'pan',
+        n: 'node-edit',                              // N for Node edit
+        p: 'pen',
         s: 'satin-column', f: 'satin-fill', t: 'tatami-fill',
         r: 'run-stitch', z: 'zoom-in',
       }
@@ -227,9 +266,12 @@ export default function EmbroideryViewport() {
   // ── Cursor ─────────────────────────────────────────────────────────────────
   const cursors: Record<string, string> = {
     select: 'default', pan: 'grab',
+    'direct-select': 'default',
+    'node-edit': 'default',
+    pen: 'crosshair',
     'satin-fill': 'crosshair', 'tatami-fill': 'crosshair',
     'satin-column': 'crosshair', 'run-stitch': 'crosshair',
-    text: 'text', 'node-edit': 'crosshair',
+    text: 'text',
     'zoom-in': 'zoom-in', 'zoom-out': 'zoom-out',
   }
 
