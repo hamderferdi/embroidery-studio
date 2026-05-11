@@ -61,7 +61,12 @@ export interface EmbroideryState {
 
 function regenObject(obj: EmbroideryObject): EmbroideryObject {
   const stitches = generateStitches(obj)
-  return { ...obj, stitches, needsRegenerate: false } as EmbroideryObject
+  // Derive entry/exit from first and last stitch automatically.
+  // entry = first needle-down (start of stitch 0)
+  // exit  = last needle-up   (end of final stitch)
+  const entryPoint = stitches.length > 0 ? { ...stitches[0][0] } : obj.entryPoint
+  const exitPoint  = stitches.length > 0 ? { ...stitches[stitches.length - 1][1] } : obj.exitPoint
+  return { ...obj, stitches, entryPoint, exitPoint, needsRegenerate: false } as EmbroideryObject
 }
 
 function countStitches(objects: EmbroideryObject[]): number {

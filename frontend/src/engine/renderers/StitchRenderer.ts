@@ -1,97 +1,116 @@
 import * as PIXI from 'pixi.js'
 import type { StitchPair, ThreadColor } from '../../embroidery/types'
 
-// Thread is drawn in world-space at a fixed physical size (~0.4mm = 1.51 world-px).
-// pixi-viewport scales the world, so the visual size grows correctly with zoom.
-const THREAD_WORLD_W = 1.6   // world-px (~0.42mm) — physical thread diameter
-const SHEEN_RATIO    = 0.38  // highlight stripe width relative to thread
-const SHADOW_ALPHA   = 0.28
-const SHADOW_OFFSET  = 0.55  // world-px
-
 /**
- * Renders a collection of stitches as GPU-efficient graphics.
- * Each stitch is drawn in three passes:
- *   1. Shadow   — dark offset line (depth illusion)
- *   2. Thread   — solid thread color
- *   3. Highlight — lighter central stripe (sheen/roundness illusion)
+ * StitchRenderer — crisp, embroidery-authentic thread rendering.
+ *
+ * Rendering passes (back to front):
+ *  1. Edge outline  — slightly wider, darkened line at SAME position.
+ *                     Creates a thin shadow border on thread sides (no float).
+ *  2. Thread body   — solid thread color, SQUARE caps (crisp needle-point ends).
+ *  3. Specular sheen — narrow lighter stripe, perpendicular offset (rayon sheen).
+ *
+ * KEY DIFFERENCES from naive approach:
+ *  ✗ NO offset shadow  → no pillow / floating / inflated look
+ *  ✗ NO round caps     → no blob / capsule shapes
+ *  ✓ SQUARE caps       → thread ends flush at needle entry point
+ *  ✓ Narrow sheen      → directional specular, not a soft glow
+ *  ✓ Edge from outline → depth comes from width difference, not position offset
  */
+
+// Thread is rendered in world-space at physical thread diameter (~0.40mm).
+// pixi-viewport zoom scales the world so visual size tracks zoom correctly.
+const THREAD_WORLD_W  = 1.5    // world-px ≈ 0.40mm — physical thread diameter
+const OUTLINE_RATIO   = 1.44   // edge outline = 44% wider than body
+const SHEEN_RATIO     = 0.21   // specular stripe width (fraction of thread width)
+const SHEEN_PERP_FRAC = 0.28   // perpendicular offset of sheen (fraction of thread width)
+const OUTLINE_ALPHA   = 0.34   // edge outline darkness
+const SHEEN_ALPHA     = 0.48   // specular brightness
+
 export class StitchRenderer {
-  private shadow:    PIXI.Graphics
-  private body:      PIXI.Graphics
-  private highlight: PIXI.Graphics
+  private outline:   PIXI.Graphics   // pass 1: wide dark edge
+  private body:      PIXI.Graphics   // pass 2: thread color, square caps
+  private sheen:     PIXI.Graphics   // pass 3: specular highlight
   private container: PIXI.Container
 
   constructor() {
     this.container = new PIXI.Container()
-    this.shadow    = new PIXI.Graphics()
+    this.outline   = new PIXI.Graphics()
     this.body      = new PIXI.Graphics()
-    this.highlight = new PIXI.Graphics()
-    this.container.addChild(this.shadow, this.body, this.highlight)
+    this.sheen     = new PIXI.Graphics()
+    this.container.addChild(this.outline, this.body, this.sheen)
   }
 
-  get displayObject(): PIXI.Container {
-    return this.container
-  }
+  get displayObject(): PIXI.Container { return this.container }
 
   clear() {
-    this.shadow.clear()
+    this.outline.clear()
     this.body.clear()
-    this.highlight.clear()
+    this.sheen.clear()
   }
 
   render(stitches: StitchPair[], color: ThreadColor, _zoom: number) {
     this.clear()
     if (!stitches || stitches.length === 0) return
 
-    // Fixed world-space sizes — pixi-viewport zoom scales them visually
-    const threadW   = THREAD_WORLD_W
-    const sheenW    = threadW * SHEEN_RATIO
-    const shadowOff = SHADOW_OFFSET
+    const tw        = THREAD_WORLD_W
+    const outlineW  = tw * OUTLINE_RATIO
+    const sheenW    = tw * SHEEN_RATIO
+    const sheenPerp = tw * SHEEN_PERP_FRAC
 
-    const hex  = PIXI.utils.string2hex(color.hex)
-    const lite = shadeLite(color.r, color.g, color.b, 0.62)
+    const hex      = PIXI.utils.string2hex(color.hex)
+    const dark     = shadeDark(color.r, color.g, color.b, 0.52)   // 52% darker
+    const lite     = shadeLite(color.r, color.g, color.b, 0.58)   // 58% lighter
 
-    // ── Shadow pass ─────────────────────────────────────────────────────────
-    this.shadow.lineStyle({
-      width: threadW,
-      color: 0x000000,
-      alpha: SHADOW_ALPHA,
-      cap: PIXI.LINE_CAP.ROUND,
+    // ── Pass 1: Edge outline (wider, darker, same position) ──────────────────
+    // Draws slightly wider than the body so a thin dark edge shows on each side.
+    // This simulates the shadow cast directly below thread onto the fabric —
+    // no position offset means no floating / puffy look.
+    this.outline.lineStyle({
+      width:  outlineW,
+      color:  dark,
+      alpha:  OUTLINE_ALPHA,
+      cap:    PIXI.LINE_CAP.BUTT,
     })
     for (const [a, b] of stitches) {
-      this.shadow.moveTo(a.x + shadowOff, a.y + shadowOff)
-      this.shadow.lineTo(b.x + shadowOff, b.y + shadowOff)
+      this.outline.moveTo(a.x, a.y)
+      this.outline.lineTo(b.x, b.y)
     }
 
-    // ── Body pass ────────────────────────────────────────────────────────────
+    // ── Pass 2: Thread body (SQUARE caps = crisp needle-entry ends) ──────────
+    // SQUARE extends the line by half-width past endpoints, which is how thread
+    // physically enters the fabric — no exposed endpoint gap.
     this.body.lineStyle({
-      width: threadW,
-      color: hex,
-      alpha: 1,
-      cap: PIXI.LINE_CAP.ROUND,
+      width:  tw,
+      color:  hex,
+      alpha:  1,
+      cap:    PIXI.LINE_CAP.SQUARE,
     })
     for (const [a, b] of stitches) {
       this.body.moveTo(a.x, a.y)
       this.body.lineTo(b.x, b.y)
     }
 
-    // ── Highlight pass ───────────────────────────────────────────────────────
-    this.highlight.lineStyle({
-      width: sheenW,
-      color: lite,
-      alpha: 0.72,
-      cap: PIXI.LINE_CAP.ROUND,
+    // ── Pass 3: Specular sheen (perpendicular to stitch direction) ──────────
+    // Narrow bright stripe offset perpendicularly — simulates rayon/poly thread
+    // anisotropic reflectance. Each stitch gets its own perpendicular direction
+    // so the sheen correctly tracks curved satin columns.
+    this.sheen.lineStyle({
+      width:  sheenW,
+      color:  lite,
+      alpha:  SHEEN_ALPHA,
+      cap:    PIXI.LINE_CAP.BUTT,
     })
     for (const [a, b] of stitches) {
-      // Offset the highlight perpendicular to the stitch direction
-      const dx = b.x - a.x
-      const dy = b.y - a.y
+      const dx  = b.x - a.x
+      const dy  = b.y - a.y
       const len = Math.sqrt(dx * dx + dy * dy) || 1
-      const nx = (-dy / len) * (threadW * 0.18)
-      const ny = ( dx / len) * (threadW * 0.18)
+      // Perpendicular unit vector (rotated 90° CCW)
+      const nx  = (-dy / len) * sheenPerp
+      const ny  = ( dx / len) * sheenPerp
 
-      this.highlight.moveTo(a.x + nx, a.y + ny)
-      this.highlight.lineTo(b.x + nx, b.y + ny)
+      this.sheen.moveTo(a.x + nx, a.y + ny)
+      this.sheen.lineTo(b.x + nx, b.y + ny)
     }
   }
 
@@ -100,8 +119,18 @@ export class StitchRenderer {
   }
 }
 
-// ─── Color helpers ────────────────────────────────────────────────────────────
+// ─── Color helpers ─────────────────────────────────────────────────────────────
 
+/** Darken toward black by `factor` (0 = original, 1 = black). */
+function shadeDark(r: number, g: number, b: number, factor: number): number {
+  return rgbToHex(
+    Math.round(r * (1 - factor)),
+    Math.round(g * (1 - factor)),
+    Math.round(b * (1 - factor)),
+  )
+}
+
+/** Lighten toward white by `factor` (0 = original, 1 = white). */
 function shadeLite(r: number, g: number, b: number, factor: number): number {
   return rgbToHex(
     Math.round(r + (255 - r) * factor),

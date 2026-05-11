@@ -8,6 +8,7 @@ import { DrawingLayer, type DrawMode } from '../layers/DrawingLayer'
 import { NodeEditLayer, type NodeField } from '../layers/NodeEditLayer'
 import { PenLayer, type PenMode } from '../layers/PenLayer'
 import { TextEditLayer } from '../layers/TextEditLayer'
+import { EntryExitLayer } from '../layers/EntryExitLayer'
 import { DEFAULT_FONT_ID } from '../../embroidery/text/FontManager'
 import type {
   EmbroideryObject, SatinFillObject, TatamiFillObject,
@@ -55,8 +56,9 @@ export class ViewportController {
   private drawing:    DrawingLayer
   private nodeEdit:   NodeEditLayer
   private penLayer:   PenLayer
-  private textLayer:  TextEditLayer
-  private callbacks:  ViewportCallbacks
+  private textLayer:   TextEditLayer
+  private entryExit:   EntryExitLayer
+  private callbacks:   ViewportCallbacks
   private objects_:   EmbroideryObject[] = []
 
   // drawing state (existing polygon/polyline tools)
@@ -127,11 +129,13 @@ export class ViewportController {
     })
     this.penLayer   = new PenLayer()
     this.textLayer  = new TextEditLayer()
+    this.entryExit  = new EntryExitLayer()
 
     ;(this.viewport as never as PIXI.Container).addChild(
       this.fabric.displayObject,
       this.grid.displayObject,
       this.embroidery.displayObject,
+      this.entryExit.displayObject,       // above stitches, below selection handles
       this.selection.displayObject,
       this.drawing.displayObject,
       this.nodeEdit.displayObject,
@@ -190,7 +194,9 @@ export class ViewportController {
 
   syncSelection(selectedIds: string[], objects: EmbroideryObject[]) {
     const selected = objects.filter(o => selectedIds.includes(o.id))
-    this.selection.render(selected, this.viewport.scale.x)
+    const zoom     = this.viewport.scale.x
+    this.selection.render(selected, zoom)
+    this.entryExit.render(selected, zoom)
   }
 
   /** Called when node-edit tool is active — shows nodes for selected object */
@@ -351,6 +357,7 @@ export class ViewportController {
     // ── 4. Apply thumbnail viewport (immediate, no animation) ─────────────────
     this.grid.setVisible(false)
     this.fabric.updateHoop(hoop, false)
+    this.entryExit.hide()                    // no UI overlays in thumbnail
     this.viewport.moveCenter(cx, cy)
     this.viewport.setZoom(clampedScale, true)
     this.embroidery.setZoom(clampedScale)
@@ -366,6 +373,7 @@ export class ViewportController {
     this.viewport.setZoom(savedScale, true)
     this.embroidery.setZoom(savedScale)
     this.embroidery.rerenderAll(this.objects_)
+    // Entry/exit markers are restored on the next syncSelection call from React.
 
     return this.app.view as HTMLCanvasElement
   }
@@ -717,6 +725,13 @@ export class ViewportController {
     this.embroidery.rerenderAll(this.objects_)
     this.nodeEdit.updateZoom(z)
     this.textLayer.setZoom(z)
+    this.entryExit.setZoom(z)
+    // Re-render entry/exit markers at new zoom so diamond sizes stay constant
+    const { selectedIds } = useEmbroideryStore.getState()
+    if (selectedIds.length > 0) {
+      const selected = this.objects_.filter(o => selectedIds.includes(o.id))
+      this.entryExit.render(selected, z)
+    }
     this.updateGrid()
     this.callbacks.onZoomChange(z, this.viewport.center.x, this.viewport.center.y)
   }
@@ -740,6 +755,7 @@ export class ViewportController {
     this.viewport.off('zoomed', this.onZoomed, this)
     this.viewport.off('moved',  this.onMoved,  this)
     this.textLayer.destroy()
+    this.entryExit.destroy()
     this.embroidery.destroy()
     this.viewport.destroy()
   }

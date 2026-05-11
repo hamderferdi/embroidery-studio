@@ -105,6 +105,14 @@ export interface EmbroideryObjectBase {
   stitches?: StitchPair[]    // cached
   needsRegenerate: boolean
   bounds?: BoundingBox
+
+  // ── Digitizing metadata ───────────────────────────────────────────────────
+  /** First needle-down point of the first stitch. Green node in the UI. */
+  entryPoint?: Point
+  /** Last needle-up point of the last stitch. Red node in the UI. */
+  exitPoint?: Point
+  /** Index of this object in the machine sewing order (0 = first). */
+  sewingOrder?: number
 }
 
 export interface BoundingBox {
