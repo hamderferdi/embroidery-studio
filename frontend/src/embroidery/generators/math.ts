@@ -107,6 +107,36 @@ export function walkPolyline(points: Point[], interval: number): Point[] {
   return result
 }
 
+/** Ray-casting point-in-polygon test */
+export function pointInPolygon(pt: Point, polygon: Point[]): boolean {
+  let inside = false
+  const n = polygon.length
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y
+    const xj = polygon[j].x, yj = polygon[j].y
+    const cross = ((yi > pt.y) !== (yj > pt.y)) &&
+      (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi)
+    if (cross) inside = !inside
+  }
+  return inside
+}
+
+/** Squared distance from point to line segment */
+export function distToSegment(pt: Point, a: Point, b: Point): number {
+  const dx = b.x - a.x, dy = b.y - a.y
+  const lenSq = dx * dx + dy * dy
+  if (lenSq === 0) return dist(pt, a)
+  const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / lenSq))
+  return dist(pt, { x: a.x + t * dx, y: a.y + t * dy })
+}
+
+/** Minimum distance from point to any segment of a polyline */
+export function distToPolyline(pt: Point, pts: Point[]): number {
+  let minD = Infinity
+  for (let i = 1; i < pts.length; i++) minD = Math.min(minD, distToSegment(pt, pts[i - 1], pts[i]))
+  return minD
+}
+
 /** Compute axis-aligned bounding box */
 export function polyBounds(points: Point[]): { minX: number; maxX: number; minY: number; maxY: number } {
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity

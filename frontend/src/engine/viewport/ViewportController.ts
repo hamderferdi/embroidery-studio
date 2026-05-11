@@ -6,14 +6,21 @@ import { EmbroideryLayer } from '../layers/EmbroideryLayer'
 import { SelectionLayer } from '../layers/SelectionLayer'
 import { DrawingLayer, type DrawMode } from '../layers/DrawingLayer'
 import { NodeEditLayer } from '../layers/NodeEditLayer'
-import type { EmbroideryObject, Point } from '../../embroidery/types'
+import type {
+  EmbroideryObject, SatinFillObject, TatamiFillObject,
+  RunStitchObject, SatinColumnObject, Point,
+} from '../../embroidery/types'
 import type { HoopDimensions } from '../../store/canvasStore'
 import { PX_PER_MM } from '../../store/canvasStore'
+import { useToolStore } from '../../store/toolStore'
+import { useEmbroideryStore } from '../../store/embroideryStore'
+import { pointInPolygon, distToPolyline } from '../../embroidery/generators/math'
 
-const WORLD_SIZE = 8000
-const MIN_ZOOM   = 0.05
-const MAX_ZOOM   = 40
-const DBL_CLICK_MS = 320   // ms threshold for double-click detection
+const WORLD_SIZE    = 8000
+const MIN_ZOOM      = 0.05
+const MAX_ZOOM      = 40
+const DBL_CLICK_MS  = 320
+const OBJ_DRAG_PX   = 4     // screen-px before a click becomes a drag
 
 export interface ViewportCallbacks {
   onZoomChange:      (zoom: number, x: number, y: number) => void
@@ -21,10 +28,12 @@ export interface ViewportCallbacks {
   onBackgroundClick: () => void
   onDrawComplete:    (mode: DrawMode, leftPts: Point[], rightPts: Point[]) => void
   onNodeChange:      (id: string, field: string, pts: Point[]) => void
+  onObjectMove:      (ids: string[], dx: number, dy: number) => void
 }
 
 export class ViewportController {
   private app:        PIXI.Application
+  private canvas:     HTMLCanvasElement
   private viewport:   Viewport
   private fabric:     FabricLayer
   private grid:       GridLayer
@@ -45,8 +54,24 @@ export class ViewportController {
   private isNodeEdit_:   boolean = false
   private nodeDragging_: boolean = false
 
+  // pan-tool state
+  private panMode_: boolean = false
+
+  // object drag state
+  private objDragStart_:   Point | null = null
+  private isDraggingObj_:  boolean = false
+  private objDragDelta_:   Point = { x: 0, y: 0 }
+  private objDragIds_:     string[] = []
+
+  // DOM listener refs (needed to remove them on destroy)
+  private _onMove:    (e: PointerEvent) => void
+  private _onDown:    (e: PointerEvent) => void
+  private _onUp:      (e: PointerEvent) => void
+  private _onCtxMenu: (e: MouseEvent)   => void
+
   constructor(app: PIXI.Application, callbacks: ViewportCallbacks) {
     this.app       = app
+    this.canvas    = app.view as HTMLCanvasElement
     this.callbacks = callbacks
 
     this.viewport = new Viewport({
@@ -92,15 +117,20 @@ export class ViewportController {
     this.viewport.setZoom(1.8, true)
     this.updateGrid()
 
-    // ── Pointer events ───────────────────────────────────────────────────────
-    ;(this.viewport as never as PIXI.Container).interactive = true
-    ;(this.viewport as never as PIXI.Container).on('pointermove',  this.onPointerMove,  this)
-    ;(this.viewport as never as PIXI.Container).on('pointerdown',  this.onPointerDown,  this)
-    ;(this.viewport as never as PIXI.Container).on('pointerup',    this.onPointerUp,    this)
-    ;(this.viewport as never as PIXI.Container).on('rightclick',   this.onRightClick,   this)
+    // ── DOM pointer events — bypass PixiJS hit-testing ───────────────────────
+    // Arrow functions preserve `this` and serve as stable refs for removeEventListener
+    this._onMove    = (e) => this.onPointerMove(e)
+    this._onDown    = (e) => this.onPointerDown(e)
+    this._onUp      = (e) => this.onPointerUp(e)
+    this._onCtxMenu = (e) => this.onContextMenu(e)
 
-    this.viewport.on('zoomed', this.onZoomed, this)
-    this.viewport.on('moved',  this.onMoved,  this)
+    this.canvas.addEventListener('pointermove',  this._onMove)
+    this.canvas.addEventListener('pointerdown',  this._onDown)
+    this.canvas.addEventListener('pointerup',    this._onUp)
+    this.canvas.addEventListener('contextmenu',  this._onCtxMenu)
+
+    this.viewport.on('zoomed',  this.onZoomed,        this)
+    this.viewport.on('moved',   this.onMoved,          this)
     this.viewport.on('clicked', this.onViewportClick, this)
   }
 
@@ -140,7 +170,6 @@ export class ViewportController {
     this.isDrawing_ = true
     this.drawMode_  = mode
     this.drawing.startDrawing(mode)
-    // Disable middle-mouse drag so left-click draws cleanly
     this.viewport.plugins.pause('drag')
     this.viewport.plugins.pause('decelerate')
   }
@@ -148,8 +177,7 @@ export class ViewportController {
   stopDrawMode() {
     this.isDrawing_ = false
     this.drawing.stopDrawing()
-    this.viewport.plugins.resume('drag')
-    this.viewport.plugins.resume('decelerate')
+    this.resumeNav()
   }
 
   startNodeEdit() {
@@ -162,18 +190,18 @@ export class ViewportController {
     this.isNodeEdit_ = false
     this.nodeDragging_ = false
     this.nodeEdit.hide()
-    this.viewport.plugins.resume('drag')
-    this.viewport.plugins.resume('decelerate')
+    this.resumeNav()
+  }
+
+  setPanMode(enable: boolean) {
+    this.panMode_ = enable
+    this.viewport.plugins.remove('drag')
+    this.viewport.drag({ mouseButtons: enable ? 'left' : 'middle' })
   }
 
   enableSpacePan(enable: boolean) {
-    if (enable) {
-      this.viewport.plugins.remove('drag')
-      this.viewport.drag({ mouseButtons: 'left' })
-    } else {
-      this.viewport.plugins.remove('drag')
-      this.viewport.drag({ mouseButtons: 'middle' })
-    }
+    this.viewport.plugins.remove('drag')
+    this.viewport.drag({ mouseButtons: enable ? 'left' : (this.panMode_ ? 'left' : 'middle') })
   }
 
   zoomToFit(hoop: HoopDimensions) {
@@ -196,80 +224,139 @@ export class ViewportController {
     const pt = this.viewport.toWorld(sx, sy);  return { x: pt.x, y: pt.y }
   }
 
-  // ── Pointer handlers ─────────────────────────────────────────────────────────
+  // ── DOM → world coordinate conversion ────────────────────────────────────────
 
-  private toWorld(e: PIXI.FederatedPointerEvent): Point {
-    const g = e.global
-    const w = this.viewport.toWorld(g.x, g.y)
+  private domToWorld(e: MouseEvent): Point {
+    const rect = this.canvas.getBoundingClientRect()
+    // clientX/Y and getBoundingClientRect are both in CSS pixels
+    const sx = e.clientX - rect.left
+    const sy = e.clientY - rect.top
+    const w  = this.viewport.toWorld(sx, sy)
     return { x: w.x, y: w.y }
   }
 
-  private onPointerMove(e: PIXI.FederatedPointerEvent) {
-    const world = this.toWorld(e)
+  // ── Pointer handlers ─────────────────────────────────────────────────────────
+
+  private onPointerMove(e: PointerEvent) {
+    const world = this.domToWorld(e)
     const zoom  = this.viewport.scale.x
 
     if (this.isDrawing_) {
       this.drawing.update(world, zoom)
+      return
     }
 
     if (this.isNodeEdit_ && this.nodeDragging_) {
       this.nodeEdit.onPointerMove(world, zoom, true)
-      // Re-render objects after node change
       this.embroidery.rerenderAll(this.objects_)
-    }
-  }
-
-  private onPointerDown(e: PIXI.FederatedPointerEvent) {
-    if (e.button !== 0) return  // left button only
-    const world = this.toWorld(e)
-    const zoom  = this.viewport.scale.x
-
-    if (this.isNodeEdit_) {
-      const hit = this.nodeEdit.onPointerDown(world, zoom)
-      if (hit) {
-        this.nodeDragging_ = true
-        e.stopPropagation()
-      }
       return
     }
 
+    // Object drag — only while left button is held
+    if (this.objDragStart_ && (e.buttons & 1)) {
+      const dx = world.x - this.objDragStart_.x
+      const dy = world.y - this.objDragStart_.y
+      if (!this.isDraggingObj_ && Math.sqrt(dx * dx + dy * dy) * zoom > OBJ_DRAG_PX) {
+        this.isDraggingObj_ = true
+      }
+      if (this.isDraggingObj_) {
+        this.embroidery.clearOffsets()
+        for (const id of this.objDragIds_) this.embroidery.setObjectOffset(id, dx, dy)
+        this.selection.setDragOffset(dx, dy)
+        this.objDragDelta_ = { x: dx, y: dy }
+      }
+    }
+  }
+
+  private onPointerDown(e: PointerEvent) {
+    if (e.button !== 0) return
+    const world = this.domToWorld(e)
+    const zoom  = this.viewport.scale.x
+    const tool  = useToolStore.getState().activeTool
+
+    // ── Node edit ────────────────────────────────────────────────────────────
+    if (this.isNodeEdit_) {
+      const hit = this.nodeEdit.onPointerDown(world, zoom)
+      if (hit) this.nodeDragging_ = true
+      return
+    }
+
+    // ── Drawing ──────────────────────────────────────────────────────────────
     if (this.isDrawing_) {
       const now = Date.now()
       const dx  = world.x - this.lastClickPos.x
       const dy  = world.y - this.lastClickPos.y
-      const dblClick = (now - this.lastClickTime < DBL_CLICK_MS) &&
-                       (Math.sqrt(dx * dx + dy * dy) < 8 / zoom)
-
+      const dbl = (now - this.lastClickTime < DBL_CLICK_MS) &&
+                  (Math.sqrt(dx * dx + dy * dy) < 8 / zoom)
       this.lastClickTime = now
       this.lastClickPos  = world
 
-      if (dblClick) {
-        this.completeDrawing()
-        return
-      }
+      if (dbl) { this.completeDrawing(); return }
 
       const done = this.drawing.addPoint(world)
-      if (done) {
-        this.completeDrawing()
+      if (done) this.completeDrawing()
+      else      this.drawing.update(world, zoom)
+      return
+    }
+
+    // ── Zoom tools ───────────────────────────────────────────────────────────
+    if (tool === 'zoom-in' || tool === 'zoom-out') {
+      const factor   = tool === 'zoom-in' ? 1.6 : 1 / 1.6
+      const newScale = Math.min(Math.max(this.viewport.scale.x * factor, MIN_ZOOM), MAX_ZOOM)
+      const center   = this.viewport.center
+      const cx = center.x + (world.x - center.x) * 0.35
+      const cy = center.y + (world.y - center.y) * 0.35
+      this.viewport.animate({ scale: newScale, position: { x: cx, y: cy }, time: 200, ease: 'easeOutQuart' })
+      return
+    }
+
+    // ── Select — hit-test objects ─────────────────────────────────────────────
+    if (tool === 'select') {
+      const hitId = this.hitTestObjects(world, zoom)
+      if (hitId) {
+        this.callbacks.onObjectClick(hitId, e.shiftKey || e.metaKey || e.ctrlKey)
+        // Zustand updates synchronously — capture the new selection for drag
+        this.objDragStart_  = world
+        this.isDraggingObj_ = false
+        this.objDragDelta_  = { x: 0, y: 0 }
+        this.objDragIds_    = useEmbroideryStore.getState().selectedIds
       } else {
-        this.drawing.update(world, zoom)
+        // Background click — deselect immediately on pointer-down
+        this.callbacks.onBackgroundClick()
       }
-      e.stopPropagation()
     }
   }
 
-  private onPointerUp(e: PIXI.FederatedPointerEvent) {
+  private onPointerUp(e: PointerEvent) {
+    // ── Node drag end ────────────────────────────────────────────────────────
     if (this.isNodeEdit_ && this.nodeDragging_) {
       this.nodeDragging_ = false
       this.nodeEdit.onPointerUp(this.viewport.scale.x)
-      // Ensure embroidery layer is up to date
       this.embroidery.rerenderAll(this.objects_)
+    }
+
+    // ── Object drag commit ───────────────────────────────────────────────────
+    if (this.objDragStart_) {
+      if (this.isDraggingObj_) {
+        const { x: dx, y: dy } = this.objDragDelta_
+        this.embroidery.clearOffsets()
+        this.selection.clearDragOffset()
+        if (Math.abs(dx) > 0.1 || Math.abs(dy) > 0.1) {
+          this.callbacks.onObjectMove(this.objDragIds_, dx, dy)
+        }
+      }
+      this.objDragStart_  = null
+      this.isDraggingObj_ = false
+      this.objDragDelta_  = { x: 0, y: 0 }
+      this.objDragIds_    = []
     }
   }
 
-  private onRightClick(e: PIXI.FederatedPointerEvent) {
+  private onContextMenu(e: MouseEvent) {
+    e.preventDefault()
     if (!this.isDrawing_) return
-    e.stopPropagation()
+    const world = this.domToWorld(e)
+    void world  // consumed only for side-effect
 
     if (this.drawing.mode === 'column') {
       if (this.drawing.phase === 0 && this.drawing.leftPoints.length >= 2) {
@@ -278,37 +365,68 @@ export class ViewportController {
         this.completeDrawing()
       }
     } else {
-      // Right-click completes polygon / polyline
       this.completeDrawing()
     }
   }
+
+  // pixi-viewport emits 'clicked' with { world, screen, viewport, event }
+  private onViewportClick(data: { world: Point; screen: Point }) {
+    if (this.isDrawing_ || this.isNodeEdit_) return
+    const tool = useToolStore.getState().activeTool
+    if (tool === 'zoom-in' || tool === 'zoom-out' || tool === 'pan') return
+    if (tool !== 'select') { this.callbacks.onBackgroundClick(); return }
+    const zoom = this.viewport.scale.x
+    if (!data?.world || !this.hitTestObjects(data.world, zoom)) {
+      this.callbacks.onBackgroundClick()
+    }
+  }
+
+  // ── Hit testing ──────────────────────────────────────────────────────────────
+
+  private hitTestObjects(world: Point, zoom: number): string | null {
+    const hitR = 8 / zoom  // 8 screen-px tolerance in world space
+
+    for (let i = this.objects_.length - 1; i >= 0; i--) {
+      const obj = this.objects_[i]
+      if (!obj.visible) continue
+
+      if (obj.type === 'satin-fill' || obj.type === 'tatami-fill') {
+        const b = (obj as SatinFillObject | TatamiFillObject).boundary
+        if (b && b.length >= 3 && pointInPolygon(world, b)) return obj.id
+
+      } else if (obj.type === 'run-stitch') {
+        const p = (obj as RunStitchObject).path
+        if (p && p.length >= 2 && distToPolyline(world, p) < hitR) return obj.id
+
+      } else if (obj.type === 'satin-column') {
+        const col = obj as SatinColumnObject
+        const r3  = hitR * 3
+        if ((col.leftPath  && distToPolyline(world, col.leftPath)  < r3) ||
+            (col.rightPath && distToPolyline(world, col.rightPath) < r3)) return obj.id
+      }
+    }
+    return null
+  }
+
+  // ── Private utils ────────────────────────────────────────────────────────────
 
   private completeDrawing() {
     const left  = [...this.drawing.leftPoints]
     const right = [...this.drawing.rightPoints]
     const mode  = this.drawing.mode
-
-    // Minimum point requirements
-    const minPts = mode === 'polygon' ? 3 : (mode === 'column' ? 2 : 2)
-    if (left.length < minPts) {
-      this.stopDrawMode()
-      return
-    }
-    if (mode === 'column' && right.length < 2) {
-      this.stopDrawMode()
-      return
-    }
-
+    const minPts = mode === 'polygon' ? 3 : 2
+    if (left.length < minPts) { this.stopDrawMode(); return }
+    if (mode === 'column' && right.length < 2) { this.stopDrawMode(); return }
     this.stopDrawMode()
     this.callbacks.onDrawComplete(mode, left, right)
   }
 
-  private onViewportClick(_e: PIXI.FederatedPointerEvent) {
-    if (this.isDrawing_ || this.isNodeEdit_) return
-    this.callbacks.onBackgroundClick()
+  private resumeNav() {
+    if (!this.isDrawing_ && !this.isNodeEdit_) {
+      this.viewport.plugins.resume('drag')
+      this.viewport.plugins.resume('decelerate')
+    }
   }
-
-  // ── Private utils ────────────────────────────────────────────────────────────
 
   private onZoomed() {
     const z = this.viewport.scale.x
@@ -331,13 +449,15 @@ export class ViewportController {
   }
 
   destroy() {
-    this.viewport.off('zoomed', this.onZoomed, this)
-    this.viewport.off('moved',  this.onMoved,  this)
+    this.canvas.removeEventListener('pointermove',  this._onMove)
+    this.canvas.removeEventListener('pointerdown',  this._onDown)
+    this.canvas.removeEventListener('pointerup',    this._onUp)
+    this.canvas.removeEventListener('contextmenu',  this._onCtxMenu)
+
+    this.viewport.off('zoomed',  this.onZoomed,        this)
+    this.viewport.off('moved',   this.onMoved,          this)
     this.viewport.off('clicked', this.onViewportClick, this)
-    ;(this.viewport as never as PIXI.Container).off('pointermove', this.onPointerMove, this)
-    ;(this.viewport as never as PIXI.Container).off('pointerdown', this.onPointerDown, this)
-    ;(this.viewport as never as PIXI.Container).off('pointerup',   this.onPointerUp,   this)
-    ;(this.viewport as never as PIXI.Container).off('rightclick',  this.onRightClick,  this)
+
     this.embroidery.destroy()
     this.viewport.destroy()
   }

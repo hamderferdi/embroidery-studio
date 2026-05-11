@@ -28,7 +28,7 @@ export default function EmbroideryViewport() {
   const {
     objects, selectedIds, clearSelection, selectObject,
     createFillFromBoundary, createRunFromPath, createColumnFromPaths,
-    undo, redo, canUndo, canRedo, updateObject,
+    undo, redo, canUndo, canRedo, updateObject, moveObjects, removeObject,
   } = useEmbroideryStore()
 
   const { activeTool, setTool, setTemporaryPan } = useToolStore()
@@ -72,6 +72,10 @@ export default function EmbroideryViewport() {
         }
         // Return to select tool after drawing
         useToolStore.getState().setTool('select')
+      },
+
+      onObjectMove: (ids, dx, dy) => {
+        useEmbroideryStore.getState().moveObjects(ids, dx, dy)
       },
 
       onNodeChange: (id, field, pts) => {
@@ -127,7 +131,7 @@ export default function EmbroideryViewport() {
   useEffect(() => { vpRef.current?.updateHoop(HOOP_SIZES[hoopSize], showHoop) }, [hoopSize, showHoop])
   useEffect(() => { vpRef.current?.updateFabricColor(fabricColor) }, [fabricColor])
 
-  // ── Activate drawing / node-edit on tool change ───────────────────────────
+  // ── Activate drawing / node-edit / pan on tool change ────────────────────
   useEffect(() => {
     const vc = vpRef.current
     if (!vc) return
@@ -148,6 +152,8 @@ export default function EmbroideryViewport() {
     } else {
       vc.stopNodeEdit()
     }
+
+    vc.setPanMode(activeTool === 'pan')
   }, [activeTool])
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
@@ -165,6 +171,15 @@ export default function EmbroideryViewport() {
       e.preventDefault()
       vpRef.current?.zoomToFit(HOOP_SIZES[useCanvasStore.getState().hoopSize])
       return
+    }
+
+    // Delete selected objects
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (e.target === document.body) {
+        const { selectedIds: ids } = useEmbroideryStore.getState()
+        ids.forEach(id => useEmbroideryStore.getState().removeObject(id))
+        return
+      }
     }
 
     // Cancel drawing with Escape

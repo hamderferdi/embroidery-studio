@@ -74,6 +74,17 @@ export class EmbroideryLayer {
     }
   }
 
+  setObjectOffset(id: string, dx: number, dy: number) {
+    const entry = this.entries.get(id)
+    if (entry) entry.renderer.displayObject.position.set(dx, dy)
+  }
+
+  clearOffsets() {
+    for (const entry of this.entries.values()) {
+      entry.renderer.displayObject.position.set(0, 0)
+    }
+  }
+
   destroy() {
     for (const entry of this.entries.values()) {
       entry.renderer.destroy()

@@ -34,6 +34,8 @@ export interface EmbroideryState {
   redo:            () => void
   loadDemo:        () => void
 
+  moveObjects:             (ids: string[], dx: number, dy: number) => void
+
   // called by drawing tools to create a new object from a drawn shape
   createFillFromBoundary:  (boundary: Point[], type: 'satin-fill' | 'tatami-fill') => void
   createRunFromPath:       (path: Point[]) => void
@@ -164,6 +166,25 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
   regenerateObject: (id) => {
     set((s) => {
       const objects = s.objects.map(o => o.id === id ? regenObject(o) : o)
+      return { objects, stitchCount: countStitches(objects) }
+    })
+  },
+
+  moveObjects: (ids, dx, dy) => {
+    withHistory(set, get, (s) => {
+      const shift = (pts: Point[]) => pts.map(p => ({ x: p.x + dx, y: p.y + dy }))
+      const objects = s.objects.map(o => {
+        if (!ids.includes(o.id)) return o
+        let patched = { ...o }
+        if (o.type === 'satin-fill' || o.type === 'tatami-fill') {
+          patched = { ...o, boundary: shift((o as SatinFillObject | TatamiFillObject).boundary) }
+        } else if (o.type === 'run-stitch') {
+          patched = { ...o, path: shift((o as RunStitchObject).path) }
+        } else if (o.type === 'satin-column') {
+          patched = { ...o, leftPath: shift((o as SatinColumnObject).leftPath), rightPath: shift((o as SatinColumnObject).rightPath) }
+        }
+        return regenObject({ ...patched, needsRegenerate: true } as EmbroideryObject)
+      })
       return { objects, stitchCount: countStitches(objects) }
     })
   },

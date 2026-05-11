@@ -27,6 +27,14 @@ export class SelectionLayer {
     this.gfx.clear()
   }
 
+  setDragOffset(dx: number, dy: number) {
+    this.container.position.set(dx, dy)
+  }
+
+  clearDragOffset() {
+    this.container.position.set(0, 0)
+  }
+
   render(selectedObjects: EmbroideryObject[], zoom: number) {
     this.gfx.clear()
     if (selectedObjects.length === 0) return
