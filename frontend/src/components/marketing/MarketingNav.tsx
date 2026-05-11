@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { useAuthStore } from '../../store/authStore'
+import { Avatar } from '../ProfileDropdown'
 
 const NAV_LINKS = [
   { label: 'Features',     to: '/features' },
@@ -11,6 +13,9 @@ export default function MarketingNav() {
   const navigate  = useNavigate()
   const location  = useLocation()
   const [open, setOpen] = useState(false)
+
+  const { user, loading, signOut } = useAuthStore()
+  const isLoggedIn = !!user && !loading
 
   const active = (to: string) => location.pathname === to
 
@@ -30,11 +35,8 @@ export default function MarketingNav() {
         fontFamily: '"Inter", system-ui, sans-serif',
       }}>
         {/* Logo */}
-        <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none' }}>
-          <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
-            <path d="M10 2.5 L17.5 9 V17.5 H13 V13 H7 V17.5 H2.5 V9 Z" fill="#2d6a4f" opacity="0.9" />
-          </svg>
-          <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.01em', color: '#1a1714' }}>
+        <Link to="/" style={{ display: 'flex', alignItems: 'center', textDecoration: 'none' }}>
+          <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em', color: '#1a1714' }}>
             <span style={{ fontFamily: 'Georgia, serif' }}>Stitch</span>
             <span style={{ fontFamily: 'Palatino, "Palatino Linotype", Georgia, serif', fontStyle: 'italic', fontWeight: 400, color: '#2d6a4f' }}>Lab</span>
           </span>
@@ -75,33 +77,63 @@ export default function MarketingNav() {
           ))}
         </div>
 
-        {/* Auth buttons */}
+        {/* Right side — auth-aware */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button
-            onClick={() => navigate('/login')}
-            style={{
-              padding: '7px 16px', borderRadius: 8,
-              background: 'transparent',
-              border: '1px solid rgba(26,23,20,0.16)',
-              fontSize: 13, fontWeight: 500, cursor: 'pointer',
-              color: '#1a1714', letterSpacing: '-0.01em',
-              transition: 'background 0.12s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,23,20,0.05)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-          >Log in</button>
-          <button
-            onClick={() => navigate('/register')}
-            style={{
-              padding: '7px 16px', borderRadius: 8,
-              background: '#2d6a4f', border: '1px solid #2d6a4f',
-              fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              color: '#fff', letterSpacing: '-0.01em',
-              transition: 'background 0.12s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#245c43')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#2d6a4f')}
-          >Start free</button>
+          {loading ? (
+            /* Prevent layout shift while session hydrates */
+            <div style={{ width: 120, height: 32 }} />
+          ) : isLoggedIn ? (
+            /* ── Logged-in state ───────────────────────────────────────────── */
+            <>
+              <button
+                onClick={() => navigate('/dashboard')}
+                style={{
+                  padding: '7px 16px', borderRadius: 8,
+                  background: 'transparent',
+                  border: '1px solid rgba(26,23,20,0.16)',
+                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  color: '#1a1714', letterSpacing: '-0.01em',
+                  transition: 'background 0.12s',
+                  }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,23,20,0.05)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                Dashboard
+              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Avatar size={30} />
+              </div>
+            </>
+          ) : (
+            /* ── Logged-out state ──────────────────────────────────────────── */
+            <>
+              <button
+                onClick={() => navigate('/login')}
+                style={{
+                  padding: '7px 16px', borderRadius: 8,
+                  background: 'transparent',
+                  border: '1px solid rgba(26,23,20,0.16)',
+                  fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  color: '#1a1714', letterSpacing: '-0.01em',
+                  transition: 'background 0.12s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(26,23,20,0.05)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >Log in</button>
+              <button
+                onClick={() => navigate('/register')}
+                style={{
+                  padding: '7px 16px', borderRadius: 8,
+                  background: '#2d6a4f', border: '1px solid #2d6a4f',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  color: '#fff', letterSpacing: '-0.01em',
+                  transition: 'background 0.12s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#245c43')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#2d6a4f')}
+              >Start free</button>
+            </>
+          )}
 
           {/* Mobile burger */}
           <button
@@ -138,8 +170,17 @@ export default function MarketingNav() {
             }}>{label}</Link>
           ))}
           <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button onClick={() => { navigate('/login'); setOpen(false) }} style={{ padding: '13px', borderRadius: 10, border: '1px solid rgba(26,23,20,0.2)', fontSize: 15, background: 'transparent', cursor: 'pointer' }}>Log in</button>
-            <button onClick={() => { navigate('/register'); setOpen(false) }} style={{ padding: '13px', borderRadius: 10, border: 'none', background: '#2d6a4f', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Start free</button>
+            {isLoggedIn ? (
+              <>
+                <button onClick={() => { navigate('/dashboard'); setOpen(false) }} style={{ padding: '13px', borderRadius: 10, border: 'none', background: '#2d6a4f', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Go to Dashboard</button>
+                <button onClick={() => { signOut(); setOpen(false) }} style={{ padding: '13px', borderRadius: 10, border: '1px solid rgba(26,23,20,0.2)', fontSize: 15, background: 'transparent', cursor: 'pointer', color: '#6b6560' }}>Sign out</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => { navigate('/login'); setOpen(false) }} style={{ padding: '13px', borderRadius: 10, border: '1px solid rgba(26,23,20,0.2)', fontSize: 15, background: 'transparent', cursor: 'pointer' }}>Log in</button>
+                <button onClick={() => { navigate('/register'); setOpen(false) }} style={{ padding: '13px', borderRadius: 10, border: 'none', background: '#2d6a4f', color: '#fff', fontSize: 15, fontWeight: 600, cursor: 'pointer' }}>Start free</button>
+              </>
+            )}
           </div>
         </div>
       )}

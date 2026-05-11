@@ -7,6 +7,7 @@ import { useToolStore, type ToolId } from '../../store/toolStore'
 import type { DrawMode } from '../layers/DrawingLayer'
 import type { PenMode } from '../layers/PenLayer'
 import { ptsToBezier } from '../../embroidery/types'
+import { registerViewport } from '../../lib/viewportCapture'
 
 PIXI.settings.ROUND_PIXELS = false
 
@@ -49,13 +50,14 @@ export default function EmbroideryViewport() {
     const h = el.clientHeight || 600
 
     const app = new PIXI.Application({
-      width:           w,
-      height:          h,
-      backgroundColor: 0x141210,
-      antialias:       true,
-      resolution:      window.devicePixelRatio || 1,
-      autoDensity:     true,
-      powerPreference: 'high-performance',
+      width:                w,
+      height:               h,
+      backgroundColor:      0x141210,
+      antialias:            true,
+      resolution:           window.devicePixelRatio || 1,
+      autoDensity:          true,
+      powerPreference:      'high-performance',
+      preserveDrawingBuffer: true,   // required for toDataURL() thumbnail capture
     })
 
     el.appendChild(app.view as HTMLCanvasElement)
@@ -120,6 +122,15 @@ export default function EmbroideryViewport() {
     })
     vpRef.current = vc
 
+    // Register viewport API for EditorPage (thumbnail capture + zoom-to-fit)
+    registerViewport({
+      captureForThumbnail: () => vc.captureForThumbnail(),
+      fitToHoop: () => {
+        const hoop = HOOP_SIZES[useCanvasStore.getState().hoopSize]
+        vc.zoomToFit(hoop)
+      },
+    })
+
     const hoop = HOOP_SIZES[useCanvasStore.getState().hoopSize]
     vc.initFabric(useCanvasStore.getState().fabricColor, hoop, useCanvasStore.getState().showHoop)
     vc.setGridVisible(useCanvasStore.getState().showGrid)
@@ -137,6 +148,7 @@ export default function EmbroideryViewport() {
 
     return () => {
       ro.disconnect()
+      registerViewport(null)
       vc.destroy()
       app.destroy(true, { children: true, texture: true, baseTexture: true })
       appRef.current = null

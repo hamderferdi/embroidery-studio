@@ -37,6 +37,12 @@ export interface EmbroideryState {
   redo:            () => void
   loadDemo:        () => void
 
+  /** Wipe all project state — call before loading a new project. */
+  reset:           () => void
+  /** Load a saved object array. Re-generates stitches for any object that has
+   *  no stitch data (e.g. older documents) and clears undo/redo history. */
+  hydrateObjects:  (objects: EmbroideryObject[]) => void
+
   moveObjects:             (ids: string[], dx: number, dy: number) => void
 
   // called by drawing tools to create a new object from a drawn shape
@@ -176,6 +182,32 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
 
   clearSelection: () => set({ selectedIds: [] }),
   setActiveColor: (c) => set({ activeColor: c }),
+
+  reset: () => set({
+    objects:     [],
+    selectedIds: [],
+    stitchCount: 0,
+    past:        [],
+    future:      [],
+    canUndo:     false,
+    canRedo:     false,
+  }),
+
+  hydrateObjects: (incoming) => {
+    // Re-generate any objects that lost their stitch data during serialisation
+    const objects = incoming.map(o =>
+      (!o.stitches || o.stitches.length === 0) ? regenObject(o) : o
+    )
+    set({
+      objects,
+      selectedIds: [],
+      stitchCount: countStitches(objects),
+      past:        [],
+      future:      [],
+      canUndo:     false,
+      canRedo:     false,
+    })
+  },
 
   regenerateAll: () => {
     set((s) => {

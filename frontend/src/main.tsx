@@ -13,6 +13,10 @@ import EditorPage        from './pages/EditorPage'
 import FeaturesPage      from './pages/FeaturesPage'
 import HowItWorksPage    from './pages/HowItWorksPage'
 import PricingPage       from './pages/PricingPage'
+import AccountPage       from './pages/settings/AccountPage'
+import PreferencesPage   from './pages/settings/PreferencesPage'
+import BillingPage       from './pages/settings/BillingPage'
+import SecurityPage      from './pages/settings/SecurityPage'
 
 function Root() {
   const { init } = useAuthStore()
@@ -37,6 +41,21 @@ function Root() {
       <Route path="/editor/:projectId" element={
         <ProtectedRoute><EditorPage /></ProtectedRoute>
       } />
+
+      {/* Settings */}
+      <Route path="/settings/account" element={
+        <ProtectedRoute><AccountPage /></ProtectedRoute>
+      } />
+      <Route path="/settings/preferences" element={
+        <ProtectedRoute><PreferencesPage /></ProtectedRoute>
+      } />
+      <Route path="/settings/billing" element={
+        <ProtectedRoute><BillingPage /></ProtectedRoute>
+      } />
+      <Route path="/settings/security" element={
+        <ProtectedRoute><SecurityPage /></ProtectedRoute>
+      } />
+      <Route path="/settings" element={<Navigate to="/settings/account" replace />} />
 
       {/* Legacy — direct editor access without a project (dev convenience) */}
       <Route path="/editor" element={<EditorPage />} />

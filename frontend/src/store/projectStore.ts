@@ -9,6 +9,8 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import { v4 as uuid } from 'uuid'
+import type { EmbroideryObject } from '../embroidery/types'
+import type { CanvasPersistedState } from './canvasStore'
 
 export interface ProjectMeta {
   id:           string
@@ -23,9 +25,16 @@ export interface ProjectMeta {
   starred:      boolean
 }
 
+/** The serialisable, per-project editor state stored in `project-docs`. */
+export interface ProjectPayload {
+  schemaVersion: 1
+  objects:       EmbroideryObject[]
+  canvas:        Partial<CanvasPersistedState>
+}
+
 export interface ProjectDocument {
   meta:    ProjectMeta
-  payload: unknown
+  payload: ProjectPayload | null
 }
 
 // ── snake_case ↔ camelCase mappers ────────────────────────────────────────────
@@ -91,14 +100,15 @@ const SUPABASE_READY = !!(
 // ── Store ──────────────────────────────────────────────────────────────────────
 
 interface ProjectState {
-  projects:      ProjectMeta[]
-  loading:       boolean
-  saving:        'idle' | 'saving' | 'saved' | 'error'
-  fetchProjects: (userId: string) => Promise<void>
-  createProject: (userId: string, name: string) => Promise<ProjectMeta>
-  saveProject:   (doc: ProjectDocument) => Promise<void>
-  deleteProject: (id: string) => Promise<void>
-  toggleStar:    (id: string) => void
+  projects:       ProjectMeta[]
+  loading:        boolean
+  saving:         'idle' | 'saving' | 'saved' | 'error'
+  fetchProjects:  (userId: string) => Promise<void>
+  createProject:  (userId: string, name: string) => Promise<ProjectMeta>
+  saveProject:    (doc: ProjectDocument) => Promise<void>
+  loadProjectDoc: (projectId: string) => Promise<ProjectPayload | null>
+  deleteProject:  (id: string) => Promise<void>
+  toggleStar:     (id: string) => void
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -150,16 +160,38 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const updated: ProjectMeta = { ...doc.meta, updatedAt: new Date().toISOString() }
     try {
       if (SUPABASE_READY) {
+        // 1. Always save metadata — this is the critical operation.
         await supabase.from('projects').upsert(toDb(updated))
-        await supabase.storage
-          .from('project-docs')
-          .upload(`${doc.meta.id}.json`, JSON.stringify(doc), { upsert: true })
+
+        // 2. Save the full document payload to Storage.
+        //    Non-fatal: if the bucket doesn't exist the meta save still succeeds.
+        if (doc.payload !== null) {
+          const body = JSON.stringify({ meta: updated, payload: doc.payload })
+          await supabase.storage
+            .from('project-docs')
+            .upload(`${doc.meta.id}.json`, body, {
+              upsert:      true,
+              contentType: 'application/json',
+            })
+            .catch(() => {
+              // Storage bucket missing or RLS blocked — store locally as fallback
+              localStorage.setItem(
+                `stitchlab_doc_${doc.meta.id}`,
+                JSON.stringify({ meta: updated, payload: doc.payload }),
+              )
+            })
+        }
       } else {
         const all = lsLoad()
         const idx = all.findIndex(p => p.id === updated.id)
         if (idx >= 0) all[idx] = updated; else all.unshift(updated)
         lsSave(all)
-        localStorage.setItem(`stitchlab_doc_${doc.meta.id}`, JSON.stringify(doc))
+        if (doc.payload !== null) {
+          localStorage.setItem(
+            `stitchlab_doc_${doc.meta.id}`,
+            JSON.stringify({ meta: updated, payload: doc.payload }),
+          )
+        }
       }
       set(s => ({
         saving:   'saved',
@@ -170,6 +202,31 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ saving: 'error' })
       setTimeout(() => set({ saving: 'idle' }), 4000)
     }
+  },
+
+  loadProjectDoc: async (projectId) => {
+    try {
+      if (SUPABASE_READY) {
+        const { data, error } = await supabase.storage
+          .from('project-docs')
+          .download(`${projectId}.json`)
+        if (!error && data) {
+          const text = await data.text()
+          const doc  = JSON.parse(text) as ProjectDocument
+          return doc.payload ?? null
+        }
+        // Storage bucket missing or file not found — fall through to localStorage
+      }
+      // localStorage fallback (used when !SUPABASE_READY or Storage bucket absent)
+      const raw = localStorage.getItem(`stitchlab_doc_${projectId}`)
+      if (raw) {
+        const doc = JSON.parse(raw) as ProjectDocument
+        return doc.payload ?? null
+      }
+    } catch {
+      // Corrupt or missing document — return null so caller starts fresh
+    }
+    return null
   },
 
   deleteProject: async (id) => {

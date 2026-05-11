@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
-import { AuthLayout, Field, ErrorBanner, SubmitButton, inputStyle } from './LoginPage'
+import { AuthLayout, Field, ErrorBanner, SubmitButton, GoogleButton, Divider, inputStyle } from './LoginPage'
 
 export default function RegisterPage() {
   const navigate   = useNavigate()
-  const { signUp } = useAuthStore()
+  const { signUp, signInWithGoogle } = useAuthStore()
 
   const [name,     setName]     = useState('')
   const [email,    setEmail]    = useState('')
@@ -32,6 +32,8 @@ export default function RegisterPage() {
       subtitle="Start digitizing for free — no credit card required"
       footer={<>Already have an account? <Link to="/login" style={{ color: '#2d6a4f', textDecoration: 'none', fontWeight: 500 }}>Sign in</Link></>}
     >
+      <GoogleButton onClick={signInWithGoogle} />
+      <Divider />
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Field label="Display name">
           <input

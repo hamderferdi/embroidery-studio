@@ -1,9 +1,11 @@
 import React from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCanvasStore, HOOP_SIZES, type HoopSize } from '../../store/canvasStore'
 import { useEmbroideryStore } from '../../store/embroideryStore'
+import { useProjectStore } from '../../store/projectStore'
 
 const Separator = () => (
-  <div className="w-px h-5 bg-studio-border mx-1 flex-shrink-0" />
+  <div className="w-px h-6 bg-studio-border mx-1.5 flex-shrink-0" />
 )
 
 const TopBtn = ({
@@ -13,8 +15,8 @@ const TopBtn = ({
     title={title}
     onClick={onClick}
     disabled={disabled}
-    className={`icon-btn px-2.5 text-xs font-medium tracking-wide ${active ? 'active' : ''} ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
-    style={{ width: 'auto', minWidth: 32 }}
+    className={`icon-btn px-3 font-medium tracking-wide ${active ? 'active' : ''} ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
+    style={{ width: 'auto', minWidth: 36, fontSize: 12, paddingTop: 6, paddingBottom: 6 }}
   >
     {label}
   </button>
@@ -38,7 +40,10 @@ async function exportDesign(format: string, stitches: { x: number; y: number }[]
   URL.revokeObjectURL(url)
 }
 
-export default function TopToolbar({ projectName }: { projectName?: string }) {
+export default function TopToolbar({ projectName, onSave }: { projectName?: string; onSave?: () => void }) {
+  const navigate = useNavigate()
+  const { saving } = useProjectStore()
+
   const {
     hoopSize, setHoopSize, showGrid, toggleGrid,
     showRulers, toggleRulers, showHoop, toggleHoop, showStitchPoints, toggleStitchPoints,
@@ -67,37 +72,40 @@ export default function TopToolbar({ projectName }: { projectName?: string }) {
 
   return (
     <div
-      className="flex items-center gap-1 px-3 h-12 flex-shrink-0 select-none"
+      className="flex items-center gap-1 px-4 flex-shrink-0 select-none"
       style={{
+        height: 56,
         background: '#1a1714',
         borderBottom: '1px solid #2e2a26',
         zIndex: 10,
       }}
     >
       {/* Logo */}
-      <div className="flex items-center gap-2 mr-3">
-        <a
-          href="#"
-          title="Home"
-          style={{ display: 'flex', alignItems: 'center', color: 'inherit', textDecoration: 'none' }}
-        >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M10 2.5 L17.5 9 V17.5 H13 V13 H7 V17.5 H2.5 V9 Z" fill="#40916c" opacity="0.85" />
-            <path d="M10 2.5 L17.5 9" stroke="#40916c" strokeWidth="1.2" strokeLinecap="round" />
-            <path d="M2.5 9 L10 2.5" stroke="#40916c" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-        </a>
-        <span className="text-studio-text font-semibold text-xs tracking-wide" style={{ letterSpacing: '0.03em' }}>
-          <span style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600 }}>Stitch</span><span style={{ fontFamily: '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif', fontStyle: 'italic', fontWeight: 400, color: '#2d6a4f' }}>Lab</span>
+      <div className="flex items-center gap-2 mr-2">
+        <span style={{ fontSize: 17, letterSpacing: '-0.01em' }}>
+          <span style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600, color: 'var(--studio-text)' }}>Stitch</span><span style={{ fontFamily: '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif', fontStyle: 'italic', fontWeight: 400, color: '#2d6a4f' }}>Lab</span>
         </span>
       </div>
 
       <Separator />
 
+      {/* Dashboard back */}
+      <TopBtn
+        label="← Back"
+        title="Back to dashboard"
+        onClick={() => navigate('/dashboard')}
+      />
+
+      <Separator />
+
       {/* File actions */}
       <TopBtn label="New"  title="New design"  onClick={() => {}} />
-      <TopBtn label="Open" title="Open design" onClick={() => {}} />
-      <TopBtn label="Save" title="Save design" onClick={() => {}} />
+      <TopBtn
+        label={saving === 'saving' ? 'Saving…' : saving === 'saved' ? '✓ Saved' : 'Save'}
+        title="Save (⌘S)"
+        onClick={() => onSave?.()}
+        active={saving === 'saved'}
+      />
 
       <Separator />
 

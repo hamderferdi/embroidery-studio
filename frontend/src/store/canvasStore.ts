@@ -16,6 +16,14 @@ export const HOOP_SIZES: Record<HoopSize, HoopDimensions> = {
   '360x200': { width: 360, height: 200, label: '360 × 200 mm' },
 }
 
+export interface CanvasPersistedState {
+  hoopSize:    HoopSize
+  fabricColor: string
+  showGrid:    boolean
+  showRulers:  boolean
+  showHoop:    boolean
+}
+
 export interface CanvasState {
   zoom: number
   panX: number
@@ -40,6 +48,10 @@ export interface CanvasState {
   toggleHoop: () => void
   toggleStitchPoints: () => void
   setFabricColor: (c: string) => void
+  /** Wipe viewport transforms — call before loading a new project. */
+  reset: () => void
+  /** Restore per-project canvas settings. */
+  hydrateCanvas: (state: Partial<CanvasPersistedState>) => void
 }
 
 // Base resolution: 1 mm = 3.78 px at 96 DPI
@@ -69,6 +81,27 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   toggleHoop: () => set((s) => ({ showHoop: !s.showHoop })),
   toggleStitchPoints: () => set((s) => ({ showStitchPoints: !s.showStitchPoints })),
   setFabricColor: (c) => set({ fabricColor: c }),
+
+  reset: () => set({
+    zoom:       1,
+    panX:       0,
+    panY:       0,
+    hoopSize:   '130x180',
+    fabricColor: '#f4efe6',
+    showGrid:   true,
+    showRulers: true,
+    showHoop:   true,
+    showStitchPoints: false,
+    mmPerPixel: 1 / BASE_PX_PER_MM,
+  }),
+
+  hydrateCanvas: (s) => set((cur) => ({
+    hoopSize:    s.hoopSize    ?? cur.hoopSize,
+    fabricColor: s.fabricColor ?? cur.fabricColor,
+    showGrid:    s.showGrid    ?? cur.showGrid,
+    showRulers:  s.showRulers  ?? cur.showRulers,
+    showHoop:    s.showHoop    ?? cur.showHoop,
+  })),
 }))
 
 export const PX_PER_MM = BASE_PX_PER_MM

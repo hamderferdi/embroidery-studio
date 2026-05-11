@@ -2,15 +2,12 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useProjectStore, type ProjectMeta } from '../store/projectStore'
+import ProfileDropdown from '../components/ProfileDropdown'
 
 // ── Tiny shared components ─────────────────────────────────────────────────────
 
 function DashNav() {
-  const { user, signOut } = useAuthStore()
   const navigate = useNavigate()
-  const displayName = (user?.user_metadata?.display_name as string | undefined)
-    ?? user?.email?.split('@')[0]
-    ?? 'User'
 
   return (
     <nav style={{
@@ -25,37 +22,13 @@ function DashNav() {
       flexShrink: 0,
     }}>
       {/* Logo */}
-      <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7 }}>
-        <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-          <path d="M10 2.5 L17.5 9 V17.5 H13 V13 H7 V17.5 H2.5 V9 Z" fill="#2d6a4f" />
-        </svg>
-        <span style={{ fontSize: 15, fontWeight: 600, fontFamily: 'Georgia, serif', color: '#1a1714' }}>Stitch</span>
-        <span style={{ fontSize: 15, fontFamily: 'Palatino, serif', fontStyle: 'italic', color: '#2d6a4f', marginLeft: -4 }}>Lab</span>
+      <button onClick={() => navigate('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+        <span style={{ fontSize: 17, fontWeight: 600, fontFamily: 'Georgia, serif', color: '#1a1714' }}>Stitch</span>
+        <span style={{ fontSize: 17, fontFamily: 'Palatino, "Palatino Linotype", Georgia, serif', fontStyle: 'italic', fontWeight: 400, color: '#2d6a4f' }}>Lab</span>
       </button>
       <div style={{ flex: 1 }} />
-      {/* User */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{
-          width: 30, height: 30, borderRadius: '50%',
-          background: '#2d6a4f22',
-          border: '1px solid #2d6a4f44',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 13, fontWeight: 600, color: '#2d6a4f',
-        }}>
-          {displayName[0].toUpperCase()}
-        </div>
-        <span style={{ fontSize: 13, color: '#4a4540', fontFamily: 'inherit' }}>{displayName}</span>
-        <button
-          onClick={async () => { await signOut(); navigate('/') }}
-          style={{
-            padding: '5px 13px', borderRadius: 7,
-            background: 'transparent', border: '1px solid rgba(26,23,20,0.14)',
-            fontSize: 12, color: '#6b6560', cursor: 'pointer',
-          }}
-        >
-          Sign out
-        </button>
-      </div>
+      {/* Profile dropdown */}
+      <ProfileDropdown />
     </nav>
   )
 }

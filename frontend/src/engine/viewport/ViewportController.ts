@@ -14,8 +14,8 @@ import type {
   RunStitchObject, SatinColumnObject, LetteringObject, BezierPath, Point,
 } from '../../embroidery/types'
 import { ptsToBezier } from '../../embroidery/types'
+import { useCanvasStore, HOOP_SIZES, PX_PER_MM } from '../../store/canvasStore'
 import type { HoopDimensions } from '../../store/canvasStore'
-import { PX_PER_MM } from '../../store/canvasStore'
 import { useToolStore } from '../../store/toolStore'
 import { useEmbroideryStore } from '../../store/embroideryStore'
 import { pointInPolygon, distToPolyline } from '../../embroidery/generators/math'
@@ -301,6 +301,73 @@ export class ViewportController {
       (this.app.screen.height - margin * 2) / hh,
     )
     this.viewport.animate({ scale, position: { x: 0, y: 0 }, time: 380, ease: 'easeInOutQuart' })
+  }
+
+  /**
+   * Render a thumbnail focused on the actual embroidery objects (no hoop, no grid).
+   * This happens synchronously between animation frames — the user sees no visual change.
+   * Returns the live PixiJS canvas element after the thumbnail render, or null if there
+   * are no stitches to display.
+   */
+  captureForThumbnail(): HTMLCanvasElement | null {
+    if (this.objects_.length === 0) return null
+
+    // ── 1. Compute stitch bounding box ────────────────────────────────────────
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    let hasPoints = false
+    for (const obj of this.objects_) {
+      const stitches = obj.stitches  // StitchPair = [Point, Point]
+      if (!stitches || stitches.length === 0) continue
+      for (const pair of stitches) {
+        for (const p of pair) {
+          if (p.x < minX) minX = p.x
+          if (p.y < minY) minY = p.y
+          if (p.x > maxX) maxX = p.x
+          if (p.y > maxY) maxY = p.y
+        }
+        hasPoints = true
+      }
+    }
+    if (!hasPoints) return null
+
+    // ── 2. Save current state ─────────────────────────────────────────────────
+    const savedCx    = this.viewport.center.x
+    const savedCy    = this.viewport.center.y
+    const savedScale = this.viewport.scale.x
+    const { showGrid, showHoop, hoopSize } = useCanvasStore.getState()
+    const hoop = HOOP_SIZES[hoopSize]
+
+    // ── 3. Compute framing ────────────────────────────────────────────────────
+    const cx = (minX + maxX) / 2
+    const cy = (minY + maxY) / 2
+    const bw = Math.max(maxX - minX, 10)
+    const bh = Math.max(maxY - minY, 10)
+    const sw = this.app.screen.width
+    const sh = this.app.screen.height
+    // 78% fill so there's a small margin around the design
+    const thumbScale = Math.min(sw / bw, sh / bh) * 0.78
+    const clampedScale = Math.min(Math.max(thumbScale, MIN_ZOOM), MAX_ZOOM)
+
+    // ── 4. Apply thumbnail viewport (immediate, no animation) ─────────────────
+    this.grid.setVisible(false)
+    this.fabric.updateHoop(hoop, false)
+    this.viewport.moveCenter(cx, cy)
+    this.viewport.setZoom(clampedScale, true)
+    this.embroidery.setZoom(clampedScale)
+    this.embroidery.rerenderAll(this.objects_)
+
+    // ── 5. Synchronous render ─────────────────────────────────────────────────
+    this.app.renderer.render(this.app.stage)
+
+    // ── 6. Restore ────────────────────────────────────────────────────────────
+    this.grid.setVisible(showGrid)
+    this.fabric.updateHoop(hoop, showHoop)
+    this.viewport.moveCenter(savedCx, savedCy)
+    this.viewport.setZoom(savedScale, true)
+    this.embroidery.setZoom(savedScale)
+    this.embroidery.rerenderAll(this.objects_)
+
+    return this.app.view as HTMLCanvasElement
   }
 
   getZoom(): number { return this.viewport.scale.x }

@@ -22,6 +22,7 @@ export interface ToolState {
   setCursorOverCanvas: (v: boolean) => void
   temporaryPan: boolean
   setTemporaryPan: (v: boolean) => void
+  reset: () => void
 }
 
 export const useToolStore = create<ToolState>((set, get) => ({
@@ -45,4 +46,11 @@ export const useToolStore = create<ToolState>((set, get) => ({
       set({ temporaryPan: false, activeTool: s.previousTool })
     }
   },
+
+  reset: () => set({
+    activeTool:       'select',
+    previousTool:     'select',
+    temporaryPan:     false,
+    cursorOverCanvas: false,
+  }),
 }))
