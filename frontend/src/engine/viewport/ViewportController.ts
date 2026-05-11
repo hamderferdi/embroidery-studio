@@ -195,7 +195,12 @@ export class ViewportController {
   syncSelection(selectedIds: string[], objects: EmbroideryObject[]) {
     const selected = objects.filter(o => selectedIds.includes(o.id))
     const zoom     = this.viewport.scale.x
-    this.selection.render(selected, zoom)
+    // Direct-select mode uses node handles, not bounding-box handles
+    if (this.isDirectSelect_) {
+      this.selection.clear()
+    } else {
+      this.selection.render(selected, zoom)
+    }
     this.entryExit.render(selected, zoom)
   }
 
@@ -251,13 +256,13 @@ export class ViewportController {
   startDirectSelect() {
     this.isDirectSelect_ = true
     this.isNodeEdit_     = false
-    // Direct select doesn't pause drag — it handles its own events and falls
-    // through to pan when nothing is hit
+    this.selection.clear()   // hide bounding-box handles; node handles take over
   }
 
   stopDirectSelect() {
     this.isDirectSelect_ = false
     this.nodeEdit.hide()
+    // Selection box will be restored on next syncSelection call
   }
 
   startPen(mode: PenMode) {
