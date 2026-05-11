@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { v4 as uuid } from 'uuid'
 import type {
   EmbroideryObject, ThreadColor, TatamiFillObject,
-  SatinFillObject, SatinColumnObject, RunStitchObject, Point, BezierPath,
+  SatinFillObject, SatinColumnObject, RunStitchObject, LetteringObject,
+  Point, BezierPath,
 } from '../embroidery/types'
 import { defaultObjectBase, THREAD_PALETTE, ptsToBezier } from '../embroidery/types'
 import { generateStitches } from '../embroidery/EmbroideryEngine'
@@ -42,6 +43,14 @@ export interface EmbroideryState {
   createFillFromBoundary:  (boundary: BezierPath, type: 'satin-fill' | 'tatami-fill') => void
   createRunFromPath:       (path: BezierPath) => void
   createColumnFromPaths:   (left: BezierPath, right: BezierPath) => void
+  createLettering:         (params: {
+    text: string; fontFamily: string; fontSizeMm: number
+    x: number; y: number; tracking?: number
+    alignment?: 'left' | 'center' | 'right'
+    letterBoundaries?: import('../embroidery/types').BezierPath[][]
+  }) => void
+  /** Re-layout letter boundaries after font loads (updates without history). */
+  relayoutLettering:       (id: string, boundaries: import('../embroidery/types').BezierPath[][]) => void
 }
 
 function regenObject(obj: EmbroideryObject): EmbroideryObject {
@@ -197,6 +206,10 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
           patched = { ...o, path: shiftPath((o as RunStitchObject).path) }
         } else if (o.type === 'satin-column') {
           patched = { ...o, leftPath: shiftPath((o as SatinColumnObject).leftPath), rightPath: shiftPath((o as SatinColumnObject).rightPath) }
+        } else if (o.type === 'lettering') {
+          const lo = o as LetteringObject
+          const shiftedBoundaries = lo.letterBoundaries?.map(contours => contours.map(shiftPath))
+          patched = { ...lo, x: lo.x + dx, y: lo.y + dy, letterBoundaries: shiftedBoundaries }
         }
         return regenObject({ ...patched, needsRegenerate: true } as EmbroideryObject)
       })
@@ -228,6 +241,32 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
       ...defaultObjectBase({ color, density: 0.38 }), leftPath: left, rightPath: right,
     } as SatinColumnObject
     get().addObject(obj)
+  },
+
+  createLettering: ({ text, fontFamily, fontSizeMm, x, y, tracking = 0, alignment = 'left', letterBoundaries }) => {
+    const color = get().activeColor
+    const id    = uuid()
+    const name  = text.trim() ? `Text: ${text.slice(0, 20)}` : 'Text (empty)'
+    const obj: LetteringObject = {
+      id, type: 'lettering', name,
+      ...defaultObjectBase({ color }),
+      text, fontFamily, fontSizeMm, x, y, tracking, alignment,
+      letterBoundaries,
+    } as LetteringObject
+    // addObject writes history; then we select immediately so the sidebar opens
+    get().addObject(obj)
+    set({ selectedIds: [id] })
+  },
+
+  relayoutLettering: (id, boundaries) => {
+    set((s) => {
+      const objects = s.objects.map(o => {
+        if (o.id !== id || o.type !== 'lettering') return o
+        const updated = { ...o, letterBoundaries: boundaries } as LetteringObject
+        return regenObject({ ...updated, needsRegenerate: true } as EmbroideryObject)
+      })
+      return { objects, stitchCount: countStitches(objects) }
+    })
   },
 
   loadDemo: () => {

@@ -34,6 +34,7 @@ export default function EmbroideryViewport() {
   const {
     objects, selectedIds, clearSelection, selectObject,
     createFillFromBoundary, createRunFromPath, createColumnFromPaths,
+    createLettering,
     undo, redo, updateObject, liveUpdate, moveObjects, removeObject,
   } = useEmbroideryStore()
 
@@ -109,6 +110,13 @@ export default function EmbroideryViewport() {
       onObjectMove: (ids, dx, dy) => {
         useEmbroideryStore.getState().moveObjects(ids, dx, dy)
       },
+
+      onTextComplete: (params) => {
+        // Create a placeholder lettering object and auto-select it.
+        // The sidebar drives all text entry and stitch generation from here.
+        useEmbroideryStore.getState().createLettering(params)
+        useToolStore.getState().setTool('select')
+      },
     })
     vpRef.current = vc
 
@@ -182,6 +190,7 @@ export default function EmbroideryViewport() {
     if (activeTool !== 'node-edit') vc.stopNodeEdit()
     if (activeTool !== 'direct-select') vc.stopDirectSelect()
     if (activeTool !== 'pen') vc.stopPen()
+    if (activeTool !== 'text') vc.stopText()
 
     // Start the new active mode
     if (drawMode) {
@@ -196,13 +205,29 @@ export default function EmbroideryViewport() {
       vc.syncDirectSelect(useEmbroideryStore.getState().objects)
     } else if (activeTool === 'pen') {
       vc.startPen(PEN_MODE)
+    } else if (activeTool === 'text') {
+      vc.startText()
     }
 
     vc.setPanMode(activeTool === 'pan')
   }, [activeTool])
 
   // ── Keyboard shortcuts ─────────────────────────────────────────────────────
+
+  /** Returns true when a sidebar input/textarea/select has focus.
+   *  All global hotkeys are suppressed in that state. */
+  const isSidebarInputFocused = () => {
+    const el = document.activeElement
+    if (!el) return false
+    const tag = el.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+           (el as HTMLElement).isContentEditable
+  }
+
   const onKeyDown = useCallback((e: KeyboardEvent) => {
+    // Never intercept keystrokes while a sidebar form control has focus.
+    if (isSidebarInputFocused()) return
+
     const meta = e.metaKey || e.ctrlKey
 
     // Undo / Redo
@@ -227,10 +252,10 @@ export default function EmbroideryViewport() {
       }
     }
 
-    // Cancel drawing / pen with Escape
+    // Cancel drawing / pen / text with Escape
     if (e.key === 'Escape') {
       const tool = useToolStore.getState().activeTool
-      if (DRAW_TOOLS[tool] || tool === 'pen') { setTool('select'); return }
+      if (DRAW_TOOLS[tool] || tool === 'pen' || tool === 'text') { setTool('select'); return }
       clearSelection()
       return
     }
@@ -239,8 +264,9 @@ export default function EmbroideryViewport() {
     if (!meta && !e.altKey && e.target === document.body) {
       const map: Record<string, ToolId> = {
         v: 'select', a: 'direct-select', h: 'pan',
-        n: 'node-edit',                              // N for Node edit
+        n: 'node-edit',
         p: 'pen',
+        x: 'text',                                   // X for teXt
         s: 'satin-column', f: 'satin-fill', t: 'tatami-fill',
         r: 'run-stitch', z: 'zoom-in',
       }
@@ -279,7 +305,7 @@ export default function EmbroideryViewport() {
     pen: 'crosshair',
     'satin-fill': 'crosshair', 'tatami-fill': 'crosshair',
     'satin-column': 'crosshair', 'run-stitch': 'crosshair',
-    text: 'text',
+    text: 'text', 'text-edit': 'text',
     'zoom-in': 'zoom-in', 'zoom-out': 'zoom-out',
   }
 

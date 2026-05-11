@@ -7,9 +7,11 @@ import { SelectionLayer } from '../layers/SelectionLayer'
 import { DrawingLayer, type DrawMode } from '../layers/DrawingLayer'
 import { NodeEditLayer, type NodeField } from '../layers/NodeEditLayer'
 import { PenLayer, type PenMode } from '../layers/PenLayer'
+import { TextEditLayer } from '../layers/TextEditLayer'
+import { DEFAULT_FONT_ID } from '../../embroidery/text/FontManager'
 import type {
   EmbroideryObject, SatinFillObject, TatamiFillObject,
-  RunStitchObject, SatinColumnObject, BezierPath, Point,
+  RunStitchObject, SatinColumnObject, LetteringObject, BezierPath, Point,
 } from '../../embroidery/types'
 import { ptsToBezier } from '../../embroidery/types'
 import type { HoopDimensions } from '../../store/canvasStore'
@@ -34,6 +36,12 @@ export interface ViewportCallbacks {
   onNodeLiveChange:  (id: string, field: NodeField, path: BezierPath) => void
   onNodeCommit:      (id: string, field: NodeField, path: BezierPath) => void
   onObjectMove:      (ids: string[], dx: number, dy: number) => void
+  onTextComplete:    (params: {
+    text: string; x: number; y: number
+    fontFamily: string; fontSizeMm: number; tracking: number
+    alignment: 'left' | 'center' | 'right'
+    letterBoundaries?: import('../../embroidery/types').BezierPath[][]
+  }) => void
 }
 
 export class ViewportController {
@@ -47,6 +55,7 @@ export class ViewportController {
   private drawing:    DrawingLayer
   private nodeEdit:   NodeEditLayer
   private penLayer:   PenLayer
+  private textLayer:  TextEditLayer
   private callbacks:  ViewportCallbacks
   private objects_:   EmbroideryObject[] = []
 
@@ -64,6 +73,9 @@ export class ViewportController {
   private isPen_:         boolean = false
   private penMode_:       PenMode = 'polyline'
   private penDragging_:   boolean = false
+
+  // text tool state
+  private isText_: boolean = false
 
   // pan-tool state
   private panMode_:      boolean = false
@@ -114,6 +126,7 @@ export class ViewportController {
       onCommit:     (id, field, path) => callbacks.onNodeCommit(id, field, path),
     })
     this.penLayer   = new PenLayer()
+    this.textLayer  = new TextEditLayer()
 
     ;(this.viewport as never as PIXI.Container).addChild(
       this.fabric.displayObject,
@@ -123,6 +136,7 @@ export class ViewportController {
       this.drawing.displayObject,
       this.nodeEdit.displayObject,
       this.penLayer.displayObject,
+      this.textLayer.displayObject,
     )
 
     this.viewport.moveCenter(0, 0)
@@ -255,6 +269,19 @@ export class ViewportController {
     this.resumeNav()
   }
 
+  startText() {
+    this.isText_ = true
+    this.textLayer.start()
+    this.viewport.plugins.pause('drag')
+    this.viewport.plugins.pause('decelerate')
+  }
+
+  stopText() {
+    this.isText_ = false
+    this.textLayer.stop()
+    this.resumeNav()
+  }
+
   setPanMode(enable: boolean) {
     this.panMode_ = enable
     if (!enable) this.panDragStart_ = null
@@ -313,6 +340,12 @@ export class ViewportController {
         this.panDragStart_.cy - ddy,
       )
       this.updateGrid()
+      return
+    }
+
+    // ── Text tool cursor ─────────────────────────────────────────────────────
+    if (this.isText_) {
+      this.textLayer.updateCursor(world, zoom)
       return
     }
 
@@ -375,6 +408,12 @@ export class ViewportController {
         cy: this.viewport.center.y,
       }
       this.canvas.setPointerCapture(e.pointerId)
+      return
+    }
+
+    // ── Text tool ────────────────────────────────────────────────────────────
+    if (this.isText_) {
+      this.placeText(world)
       return
     }
 
@@ -515,6 +554,25 @@ export class ViewportController {
     }
   }
 
+  // ── Text tool ────────────────────────────────────────────────────────────────
+
+  /**
+   * User clicked the canvas with the text tool.
+   * Create a placeholder LetteringObject at this world position immediately —
+   * no font loading required. Text entry happens in the sidebar.
+   */
+  private placeText(world: Point) {
+    this.callbacks.onTextComplete({
+      text:       '',
+      x:          world.x,
+      y:          world.y,
+      fontFamily: DEFAULT_FONT_ID,
+      fontSizeMm: 10,
+      tracking:   0,
+      alignment:  'left',
+    })
+  }
+
   // ── Completion ───────────────────────────────────────────────────────────────
 
   private completeDrawing() {
@@ -561,6 +619,17 @@ export class ViewportController {
         const rp  = flattenBezierPath(col.rightPath)
         if ((lp.length >= 2 && distToPolyline(world, lp) < r3) ||
             (rp.length >= 2 && distToPolyline(world, rp) < r3)) return obj.id
+
+      } else if (obj.type === 'lettering') {
+        const lo = obj as import('../../embroidery/types').LetteringObject
+        if (lo.letterBoundaries) {
+          for (const contours of lo.letterBoundaries) {
+            for (const contour of contours) {
+              const pts = flattenBezierPath(contour)
+              if (pts.length >= 3 && pointInPolygon(world, pts)) return obj.id
+            }
+          }
+        }
       }
     }
     return null
@@ -569,7 +638,7 @@ export class ViewportController {
   // ── Private utils ────────────────────────────────────────────────────────────
 
   private resumeNav() {
-    if (!this.isDrawing_ && !this.isNodeEdit_ && !this.isPen_) {
+    if (!this.isDrawing_ && !this.isNodeEdit_ && !this.isPen_ && !this.isText_) {
       this.viewport.plugins.resume('drag')
       this.viewport.plugins.resume('decelerate')
     }
@@ -580,6 +649,7 @@ export class ViewportController {
     this.embroidery.setZoom(z)
     this.embroidery.rerenderAll(this.objects_)
     this.nodeEdit.updateZoom(z)
+    this.textLayer.setZoom(z)
     this.updateGrid()
     this.callbacks.onZoomChange(z, this.viewport.center.x, this.viewport.center.y)
   }
@@ -602,6 +672,7 @@ export class ViewportController {
     this.canvas.removeEventListener('contextmenu',  this._onCtxMenu)
     this.viewport.off('zoomed', this.onZoomed, this)
     this.viewport.off('moved',  this.onMoved,  this)
+    this.textLayer.destroy()
     this.embroidery.destroy()
     this.viewport.destroy()
   }

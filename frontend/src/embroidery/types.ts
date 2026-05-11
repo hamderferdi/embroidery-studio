@@ -146,12 +146,26 @@ export interface ManualStitchObject extends EmbroideryObjectBase {
   points: Point[]
 }
 
+export interface LetteringObject extends EmbroideryObjectBase {
+  type: 'lettering'
+  text:           string
+  fontFamily:     string   // e.g. 'inter', 'dancing' — matches FontInfo.id
+  fontSizeMm:     number   // cap height in mm
+  x:              number   // world-space baseline origin X
+  y:              number   // world-space baseline origin Y
+  tracking:       number   // extra spacing in pixels (can be negative)
+  alignment:      'left' | 'center' | 'right'
+  /** Per-letter contour arrays — populated after the font loads. */
+  letterBoundaries?: BezierPath[][]
+}
+
 export type EmbroideryObject =
   | SatinColumnObject
   | SatinFillObject
   | TatamiFillObject
   | RunStitchObject
   | ManualStitchObject
+  | LetteringObject
 
 // ─── Factory Defaults ─────────────────────────────────────────────────────────
 

@@ -27,8 +27,7 @@ const TOOLS: ToolDef[] = [
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M3 2l10 5-5.5 1.5L6 14 3 2z"
-          stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"
-          fill="none"/>
+          fill="white" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/>
       </svg>
     ),
     group: 'transform',
@@ -105,7 +104,7 @@ const TOOLS: ToolDef[] = [
     group: 'embroidery',
   },
   {
-    id: 'text', label: 'Tx', title: 'Lettering (Tx)',
+    id: 'text', label: 'Tx', title: 'Lettering — click to place text (X)',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
         <path d="M3 4h10M8 4v8M5 12h6"/>

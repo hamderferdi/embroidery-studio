@@ -38,7 +38,7 @@ async function exportDesign(format: string, stitches: { x: number; y: number }[]
   URL.revokeObjectURL(url)
 }
 
-export default function TopToolbar() {
+export default function TopToolbar({ projectName }: { projectName?: string }) {
   const {
     hoopSize, setHoopSize, showGrid, toggleGrid,
     showRulers, toggleRulers, showHoop, toggleHoop, showStitchPoints, toggleStitchPoints,
@@ -67,7 +67,7 @@ export default function TopToolbar() {
 
   return (
     <div
-      className="flex items-center gap-1 px-3 h-10 flex-shrink-0 select-none"
+      className="flex items-center gap-1 px-3 h-12 flex-shrink-0 select-none"
       style={{
         background: '#1a1714',
         borderBottom: '1px solid #2e2a26',
@@ -76,13 +76,19 @@ export default function TopToolbar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-2 mr-3">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <circle cx="10" cy="10" r="8" stroke="#40916c" strokeWidth="1.5" />
-          <path d="M6 10 Q10 5 14 10 Q10 15 6 10Z" fill="#40916c" opacity="0.7" />
-          <circle cx="10" cy="10" r="1.5" fill="#40916c" />
-        </svg>
-        <span className="text-studio-text font-semibold text-xs tracking-wide">
-          Embroidery Studio
+        <a
+          href="#"
+          title="Home"
+          style={{ display: 'flex', alignItems: 'center', color: 'inherit', textDecoration: 'none' }}
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M10 2.5 L17.5 9 V17.5 H13 V13 H7 V17.5 H2.5 V9 Z" fill="#40916c" opacity="0.85" />
+            <path d="M10 2.5 L17.5 9" stroke="#40916c" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M2.5 9 L10 2.5" stroke="#40916c" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+        </a>
+        <span className="text-studio-text font-semibold text-xs tracking-wide" style={{ letterSpacing: '0.03em' }}>
+          <span style={{ fontFamily: 'Georgia, "Times New Roman", serif', fontWeight: 600 }}>Stitch</span><span style={{ fontFamily: '"Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif', fontStyle: 'italic', fontWeight: 400, color: '#2d6a4f' }}>Lab</span>
         </span>
       </div>
 
@@ -131,6 +137,13 @@ export default function TopToolbar() {
 
       {/* Spacer */}
       <div className="flex-1" />
+
+      {/* Project name */}
+      {projectName && (
+        <span style={{ fontSize: 12, color: '#4a4540', letterSpacing: '-0.01em', fontFamily: 'inherit' }}>
+          {projectName}
+        </span>
+      )}
 
       {/* Stitch count */}
       <div className="flex items-center gap-1.5">

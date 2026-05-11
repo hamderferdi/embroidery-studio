@@ -5,11 +5,16 @@ import RightInspector from './ui/inspector/RightInspector'
 import BottomStatusBar from './ui/statusbar/BottomStatusBar'
 import EmbroideryViewport from './engine/viewport/EmbroideryViewport'
 
+interface AppProps {
+  projectId?:   string
+  projectName?: string
+}
+
 /**
- * Full-screen application layout:
+ * Full-screen editor layout.
  *
  *   ┌─────────────────────────────────────────────┐
- *   │              Top Toolbar                     │  h-10
+ *   │              Top Toolbar                     │  h-12
  *   ├──────┬──────────────────────────┬────────────┤
  *   │ Tool │                          │  Inspector │  flex-1
  *   │ Panel│    PixiJS Viewport       │            │
@@ -18,30 +23,21 @@ import EmbroideryViewport from './engine/viewport/EmbroideryViewport'
  *   │              Bottom Status Bar               │  h-7
  *   └─────────────────────────────────────────────┘
  */
-export default function App() {
+export default function App({ projectId, projectName }: AppProps) {
   return (
-    <div
-      className="flex flex-col"
-      style={{ width: '100vw', height: '100vh', overflow: 'hidden', background: '#141210' }}
-    >
-      {/* Top toolbar */}
-      <TopToolbar />
+    <div className="editor-root flex flex-col">
+      <TopToolbar projectName={projectName} />
 
-      {/* Main workspace */}
       <div className="flex flex-1 min-h-0">
-        {/* Left tool panel */}
         <LeftToolPanel />
 
-        {/* Center viewport — fills all remaining space */}
         <div className="flex-1 min-w-0 relative">
           <EmbroideryViewport />
         </div>
 
-        {/* Right inspector */}
         <RightInspector />
       </div>
 
-      {/* Bottom status bar */}
       <BottomStatusBar />
     </div>
   )
