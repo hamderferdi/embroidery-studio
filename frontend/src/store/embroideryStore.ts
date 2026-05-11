@@ -46,6 +46,8 @@ export interface EmbroideryState {
   moveObjects:             (ids: string[], dx: number, dy: number) => void
 
   // called by drawing tools to create a new object from a drawn shape
+  /** Persist a manually-repositioned entry or exit point without regenerating stitches. */
+  setEntryExit:            (id: string, type: 'entry' | 'exit', point: import('../embroidery/types').Point) => void
   createFillFromBoundary:  (boundary: BezierPath, type: 'satin-fill' | 'tatami-fill') => void
   createRunFromPath:       (path: BezierPath) => void
   createColumnFromPaths:   (left: BezierPath, right: BezierPath) => void
@@ -252,6 +254,17 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
       })
       return { objects, stitchCount: countStitches(objects) }
     })
+  },
+
+  setEntryExit: (id, type, point) => {
+    set((s) => ({
+      objects: s.objects.map(o => {
+        if (o.id !== id) return o
+        return type === 'entry'
+          ? { ...o, entryPoint: { ...point } }
+          : { ...o, exitPoint:  { ...point } }
+      }),
+    }))
   },
 
   createFillFromBoundary: (boundary, type) => {

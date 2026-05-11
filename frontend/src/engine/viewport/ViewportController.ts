@@ -454,6 +454,12 @@ export class ViewportController {
       return
     }
 
+    // ── Entry/exit drag ──────────────────────────────────────────────────────
+    if (this.entryExit.isDragging) {
+      this.entryExit.onPointerMove(world)
+      return
+    }
+
     // ── Object drag ──────────────────────────────────────────────────────────
     if (this.objDragStart_ && (e.buttons & 1)) {
       const dx = world.x - this.objDragStart_.x
@@ -559,6 +565,12 @@ export class ViewportController {
 
     // ── Select ───────────────────────────────────────────────────────────────
     if (tool === 'select') {
+      // Entry/exit diamonds take priority over object drag
+      if (this.entryExit.onPointerDown(world, zoom)) {
+        this.canvas.setPointerCapture(e.pointerId)
+        return
+      }
+
       const hitId = this.hitTestObjects(world, zoom)
       if (hitId) {
         this.callbacks.onObjectClick(hitId, e.shiftKey || e.metaKey || e.ctrlKey)
@@ -597,6 +609,17 @@ export class ViewportController {
       if (this.canvas.hasPointerCapture(e.pointerId))
         this.canvas.releasePointerCapture(e.pointerId)
       return
+    }
+
+    // ── Entry/exit drag commit ───────────────────────────────────────────────
+    {
+      const result = this.entryExit.onPointerUp()
+      if (result) {
+        useEmbroideryStore.getState().setEntryExit(result.objId, result.type, result.point)
+        if (this.canvas.hasPointerCapture(e.pointerId))
+          this.canvas.releasePointerCapture(e.pointerId)
+        return
+      }
     }
 
     // ── Object drag commit ───────────────────────────────────────────────────
