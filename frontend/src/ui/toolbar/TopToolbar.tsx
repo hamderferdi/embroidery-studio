@@ -5,6 +5,7 @@ import { useEmbroideryStore } from '../../store/embroideryStore'
 import { useProjectStore } from '../../store/projectStore'
 import { compileMachineStitches, flattenForExport } from '../../embroidery/MachineCompiler'
 import { exportDST } from '../../embroidery/export/DSTExporter'
+import { exportPES } from '../../embroidery/export/PESExporter'
 
 const Separator = () => (
   <div className="w-px h-6 bg-studio-border mx-1.5 flex-shrink-0" />
@@ -58,7 +59,13 @@ export default function TopToolbar({ projectName, onSave }: { projectName?: stri
         return
       }
 
-      // Other formats (pes, vp3, jef…) still route to the Python backend
+      if (format === 'pes') {
+        const bytes = exportPES(flatStitches, projectName ?? 'Design')
+        downloadBytes(bytes, 'embroidery.pes')
+        return
+      }
+
+      // Other formats (vp3, jef…) still route to the Python backend
       const BACKEND = 'http://localhost:8000'
       fetch(`${BACKEND}/export`, {
         method:  'POST',
@@ -179,8 +186,8 @@ export default function TopToolbar({ projectName, onSave }: { projectName?: stri
       <Separator />
 
       {/* Export */}
-      <TopBtn label="Export DST" title="Export as DST (requires backend)" onClick={() => handleExport('dst')} />
-      <TopBtn label="Export PES" title="Export as PES (requires backend)" onClick={() => handleExport('pes')} />
+      <TopBtn label="Export DST" title="Export as DST (Tajima)" onClick={() => handleExport('dst')} />
+      <TopBtn label="Export PES" title="Export as PES (Brother)" onClick={() => handleExport('pes')} />
     </div>
   )
 }
