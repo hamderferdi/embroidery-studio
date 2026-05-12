@@ -41,8 +41,8 @@ export function exportPES(
 
   // ── Convert world-px → 1/10 mm, flip Y ──────────────────────────────────────
   const pts = stitches.map(s => ({
-    x:    Math.round( s.x * TO_TENTH_MM),
-    y:    Math.round(-s.y * TO_TENTH_MM),   // Y-up for Brother machines
+    x:    Math.round(s.x * TO_TENTH_MM),
+    y:    Math.round(s.y * TO_TENTH_MM),    // PES viewers flip Y themselves; keep screen orientation
     jump: s.type === 'jump',
   }))
 
