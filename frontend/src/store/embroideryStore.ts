@@ -7,6 +7,9 @@ import type {
 } from '../embroidery/types'
 import { defaultObjectBase, THREAD_PALETTE, ptsToBezier } from '../embroidery/types'
 import { generateStitches } from '../embroidery/EmbroideryEngine'
+import {
+  extractPerimeter, nearestPerimeterPoint, evalPerimeterPoint,
+} from '../embroidery/perimeterUtils'
 import { PX_PER_MM } from './canvasStore'
 
 const MAX_HISTORY = 50
@@ -46,8 +49,8 @@ export interface EmbroideryState {
   moveObjects:             (ids: string[], dx: number, dy: number) => void
 
   // called by drawing tools to create a new object from a drawn shape
-  /** Persist a manually-repositioned entry or exit point without regenerating stitches. */
-  setEntryExit:            (id: string, type: 'entry' | 'exit', point: import('../embroidery/types').Point) => void
+  /** Persist a perimeter-constrained entry or exit point without regenerating stitches. */
+  setEntryExit:            (id: string, type: 'entry' | 'exit', pp: import('../embroidery/types').PerimeterPoint) => void
   createFillFromBoundary:  (boundary: BezierPath, type: 'satin-fill' | 'tatami-fill') => void
   createRunFromPath:       (path: BezierPath) => void
   createColumnFromPaths:   (left: BezierPath, right: BezierPath) => void
@@ -62,13 +65,38 @@ export interface EmbroideryState {
 }
 
 function regenObject(obj: EmbroideryObject): EmbroideryObject {
-  const stitches = generateStitches(obj)
-  // Derive entry/exit from first and last stitch automatically.
-  // entry = first needle-down (start of stitch 0)
-  // exit  = last needle-up   (end of final stitch)
-  const entryPoint = stitches.length > 0 ? { ...stitches[0][0] } : obj.entryPoint
-  const exitPoint  = stitches.length > 0 ? { ...stitches[stitches.length - 1][1] } : obj.exitPoint
-  return { ...obj, stitches, entryPoint, exitPoint, needsRegenerate: false } as EmbroideryObject
+  const stitches  = generateStitches(obj)
+  const perimeter = extractPerimeter({ ...obj, stitches } as EmbroideryObject)
+
+  let entryPerimeter = obj.entryPerimeter
+  let exitPerimeter  = obj.exitPerimeter
+
+  if (perimeter.length >= 2) {
+    if (entryPerimeter) {
+      // Re-attach existing perimeter point after geometry change
+      const pos      = evalPerimeterPoint(perimeter, entryPerimeter)
+      entryPerimeter = { ...entryPerimeter, position: pos }
+    } else {
+      // First time: snap first stitch start to nearest perimeter point
+      const rawEntry = stitches.length > 0 ? stitches[0][0] : null
+      if (rawEntry) entryPerimeter = nearestPerimeterPoint(perimeter, rawEntry)
+    }
+
+    if (exitPerimeter) {
+      const pos     = evalPerimeterPoint(perimeter, exitPerimeter)
+      exitPerimeter = { ...exitPerimeter, position: pos }
+    } else {
+      const rawExit = stitches.length > 0 ? stitches[stitches.length - 1][1] : null
+      if (rawExit) exitPerimeter = nearestPerimeterPoint(perimeter, rawExit)
+    }
+  }
+
+  const entryPoint = entryPerimeter?.position ?? (stitches.length > 0 ? stitches[0][0] : obj.entryPoint)
+  const exitPoint  = exitPerimeter?.position  ?? (stitches.length > 0 ? stitches[stitches.length - 1][1] : obj.exitPoint)
+
+  return {
+    ...obj, stitches, entryPoint, exitPoint, entryPerimeter, exitPerimeter, needsRegenerate: false,
+  } as EmbroideryObject
 }
 
 function countStitches(objects: EmbroideryObject[]): number {
@@ -256,13 +284,13 @@ export const useEmbroideryStore = create<EmbroideryState>((set, get) => ({
     })
   },
 
-  setEntryExit: (id, type, point) => {
+  setEntryExit: (id, type, pp) => {
     set((s) => ({
       objects: s.objects.map(o => {
         if (o.id !== id) return o
         return type === 'entry'
-          ? { ...o, entryPoint: { ...point } }
-          : { ...o, exitPoint:  { ...point } }
+          ? { ...o, entryPoint: { ...pp.position }, entryPerimeter: pp }
+          : { ...o, exitPoint:  { ...pp.position }, exitPerimeter:  pp }
       }),
     }))
   },

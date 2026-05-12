@@ -107,12 +107,38 @@ export interface EmbroideryObjectBase {
   bounds?: BoundingBox
 
   // ── Digitizing metadata ───────────────────────────────────────────────────
-  /** First needle-down point of the first stitch. Green node in the UI. */
+  /** World-space position of the entry node (derived from entryPerimeter). */
   entryPoint?: Point
-  /** Last needle-up point of the last stitch. Red node in the UI. */
+  /** World-space position of the exit node (derived from exitPerimeter). */
   exitPoint?: Point
+  /**
+   * Perimeter-constrained entry position.
+   * Stores which edge and how far along it the entry point lives so it can be
+   * re-evaluated (re-attached) when the object's geometry changes.
+   */
+  entryPerimeter?: PerimeterPoint
+  /**
+   * Perimeter-constrained exit position.
+   */
+  exitPerimeter?: PerimeterPoint
   /** Index of this object in the machine sewing order (0 = first). */
   sewingOrder?: number
+}
+
+// ── Perimeter constraint ───────────────────────────────────────────────────────
+
+/**
+ * A point constrained to the perimeter (outline) of an embroidery object.
+ * Stored as edge-relative coordinates so it re-attaches after geometry edits.
+ *
+ *   edgeIndex — which segment of the flattened perimeter polyline
+ *   t         — normalized distance along that segment [0, 1]
+ *   position  — derived world-space position (recomputed when geometry changes)
+ */
+export interface PerimeterPoint {
+  edgeIndex: number
+  t:         number
+  position:  Point
 }
 
 export interface BoundingBox {

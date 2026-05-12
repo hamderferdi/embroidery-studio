@@ -615,7 +615,7 @@ export class ViewportController {
     {
       const result = this.entryExit.onPointerUp()
       if (result) {
-        useEmbroideryStore.getState().setEntryExit(result.objId, result.type, result.point)
+        useEmbroideryStore.getState().setEntryExit(result.objId, result.type, result.perimeterPoint)
         if (this.canvas.hasPointerCapture(e.pointerId))
           this.canvas.releasePointerCapture(e.pointerId)
         return
