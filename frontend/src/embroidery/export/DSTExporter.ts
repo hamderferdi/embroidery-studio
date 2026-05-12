@@ -139,25 +139,46 @@ function stepClamp(v: number): number {
  * Bit layout:
  *   Byte 1:  [y+1][y-1][y+9][y-9][x-9][x+9][x-1][x+1]
  *   Byte 2:  [y+3][y-3][y+27][y-27][x-27][x+27][x-3][x+3]
+ *
+ * Each power has an independent +/− bit, so mixed-sign combinations like
+ * 27−1=26 or 9−3−1=5 are valid.  We use balanced-ternary decomposition so
+ * every integer in [−40, 40] is encoded exactly (no precision loss).
  */
 function encodeDelta(dx: number, dy: number): [number, number] {
   let b1 = 0, b2 = 0
 
-  // ── X axis ─────────────────────────────────────────────────────────────────
-  let ax   = Math.abs(dx)
-  const xn = dx < 0    // negative direction
-  if (ax >= 27) { ax -= 27; b2 |= xn ? 0x08 : 0x04 }
-  if (ax >=  9) { ax -=  9; b1 |= xn ? 0x08 : 0x04 }
-  if (ax >=  3) { ax -=  3; b2 |= xn ? 0x02 : 0x01 }
-  if (ax >=  1) {            b1 |= xn ? 0x02 : 0x01 }
+  // ── X axis — balanced ternary over powers {27, 9, 3, 1} ───────────────────
+  let ax = dx
+  // For each power choose digit ∈ {−1,0,+1} that keeps remainder encodable.
+  const x27 = ax > 13 ? 1 : ax < -13 ? -1 : 0;  ax -= x27 * 27
+  const x9  = ax >  4 ? 1 : ax <  -4 ? -1 : 0;  ax -= x9  *  9
+  const x3  = ax >  1 ? 1 : ax <  -1 ? -1 : 0;  ax -= x3  *  3
+  const x1  = ax >  0 ? 1 : ax <   0 ? -1 : 0
 
-  // ── Y axis ─────────────────────────────────────────────────────────────────
-  let ay   = Math.abs(dy)
-  const yn = dy < 0
-  if (ay >= 27) { ay -= 27; b2 |= yn ? 0x10 : 0x20 }
-  if (ay >=  9) { ay -=  9; b1 |= yn ? 0x10 : 0x20 }
-  if (ay >=  3) { ay -=  3; b2 |= yn ? 0x40 : 0x80 }
-  if (ay >=  1) {            b1 |= yn ? 0x40 : 0x80 }
+  if (x27 > 0) b2 |= 0x04  // x+27
+  if (x27 < 0) b2 |= 0x08  // x-27
+  if (x9  > 0) b1 |= 0x04  // x+9
+  if (x9  < 0) b1 |= 0x08  // x-9
+  if (x3  > 0) b2 |= 0x01  // x+3
+  if (x3  < 0) b2 |= 0x02  // x-3
+  if (x1  > 0) b1 |= 0x01  // x+1
+  if (x1  < 0) b1 |= 0x02  // x-1
+
+  // ── Y axis — same balanced ternary ────────────────────────────────────────
+  let ay = dy
+  const y27 = ay > 13 ? 1 : ay < -13 ? -1 : 0;  ay -= y27 * 27
+  const y9  = ay >  4 ? 1 : ay <  -4 ? -1 : 0;  ay -= y9  *  9
+  const y3  = ay >  1 ? 1 : ay <  -1 ? -1 : 0;  ay -= y3  *  3
+  const y1  = ay >  0 ? 1 : ay <   0 ? -1 : 0
+
+  if (y27 > 0) b2 |= 0x20  // y+27
+  if (y27 < 0) b2 |= 0x10  // y-27
+  if (y9  > 0) b1 |= 0x20  // y+9
+  if (y9  < 0) b1 |= 0x10  // y-9
+  if (y3  > 0) b2 |= 0x80  // y+3
+  if (y3  < 0) b2 |= 0x40  // y-3
+  if (y1  > 0) b1 |= 0x80  // y+1
+  if (y1  < 0) b1 |= 0x40  // y-1
 
   return [b1, b2]
 }
