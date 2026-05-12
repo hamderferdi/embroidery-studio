@@ -28,7 +28,7 @@ export default function EmbroideryViewport() {
   const vpRef        = useRef<ViewportController | null>(null)
 
   const {
-    hoopSize, showGrid, showHoop, fabricColor,
+    hoopSize, showGrid, showHoop, fabricColor, showStitchPoints,
     setZoom, setViewportSize,
   } = useCanvasStore()
 
@@ -189,6 +189,7 @@ export default function EmbroideryViewport() {
   useEffect(() => { vpRef.current?.setGridVisible(showGrid) }, [showGrid])
   useEffect(() => { vpRef.current?.updateHoop(HOOP_SIZES[hoopSize], showHoop) }, [hoopSize, showHoop])
   useEffect(() => { vpRef.current?.updateFabricColor(fabricColor) }, [fabricColor])
+  useEffect(() => { vpRef.current?.setStitchPointsVisible(showStitchPoints) }, [showStitchPoints])
 
   // ── Activate tools on activeTool change ───────────────────────────────────
   useEffect(() => {

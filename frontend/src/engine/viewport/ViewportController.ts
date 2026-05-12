@@ -9,6 +9,8 @@ import { NodeEditLayer, type NodeField } from '../layers/NodeEditLayer'
 import { PenLayer, type PenMode } from '../layers/PenLayer'
 import { TextEditLayer } from '../layers/TextEditLayer'
 import { EntryExitLayer } from '../layers/EntryExitLayer'
+import { StitchPointLayer } from '../layers/StitchPointLayer'
+import { compileMachineStitches } from '../../embroidery/MachineCompiler'
 import { DEFAULT_FONT_ID } from '../../embroidery/text/FontManager'
 import type {
   EmbroideryObject, SatinFillObject, TatamiFillObject,
@@ -57,8 +59,9 @@ export class ViewportController {
   private nodeEdit:   NodeEditLayer
   private penLayer:   PenLayer
   private textLayer:   TextEditLayer
-  private entryExit:   EntryExitLayer
-  private callbacks:   ViewportCallbacks
+  private entryExit:     EntryExitLayer
+  private stitchPoints:  StitchPointLayer
+  private callbacks:     ViewportCallbacks
   private objects_:   EmbroideryObject[] = []
 
   // drawing state (existing polygon/polyline tools)
@@ -127,14 +130,16 @@ export class ViewportController {
       onLiveChange: (id, field, path) => callbacks.onNodeLiveChange(id, field, path),
       onCommit:     (id, field, path) => callbacks.onNodeCommit(id, field, path),
     })
-    this.penLayer   = new PenLayer()
-    this.textLayer  = new TextEditLayer()
-    this.entryExit  = new EntryExitLayer()
+    this.penLayer     = new PenLayer()
+    this.textLayer    = new TextEditLayer()
+    this.entryExit    = new EntryExitLayer()
+    this.stitchPoints = new StitchPointLayer()
 
     ;(this.viewport as never as PIXI.Container).addChild(
       this.fabric.displayObject,
       this.grid.displayObject,
       this.embroidery.displayObject,
+      this.stitchPoints.displayObject,    // above thread rendering, below UI overlays
       this.entryExit.displayObject,       // above stitches, below selection handles
       this.selection.displayObject,
       this.drawing.displayObject,
@@ -142,6 +147,10 @@ export class ViewportController {
       this.penLayer.displayObject,
       this.textLayer.displayObject,
     )
+
+    // Sync initial showStitchPoints state
+    const { showStitchPoints } = useCanvasStore.getState()
+    this.stitchPoints.setVisible(showStitchPoints)
 
     this.viewport.moveCenter(0, 0)
     this.viewport.setZoom(1.8, true)
@@ -172,10 +181,16 @@ export class ViewportController {
   updateHoop(hoop: HoopDimensions, visible: boolean) { this.fabric.updateHoop(hoop, visible) }
   setGridVisible(v: boolean) { this.grid.setVisible(v) }
 
+  setStitchPointsVisible(v: boolean) {
+    this.stitchPoints.setVisible(v)
+    this.syncStitchPoints()
+  }
+
   syncObjects(objects: EmbroideryObject[]) {
     this.objects_ = objects
     this.embroidery.setZoom(this.viewport.scale.x)
     this.embroidery.syncObjects(objects)
+    this.syncStitchPoints()
 
     // Keep node-edit layer geometry in sync via syncObjects (NOT setObjects) —
     // syncObjects rebuilds entries but preserves drag state and selection.
@@ -345,7 +360,7 @@ export class ViewportController {
     const savedCx    = this.viewport.center.x
     const savedCy    = this.viewport.center.y
     const savedScale = this.viewport.scale.x
-    const { showGrid, showHoop, hoopSize } = useCanvasStore.getState()
+    const { showGrid, showHoop, showStitchPoints, hoopSize } = useCanvasStore.getState()
     const hoop = HOOP_SIZES[hoopSize]
 
     // ── 3. Compute framing ────────────────────────────────────────────────────
@@ -363,6 +378,7 @@ export class ViewportController {
     this.grid.setVisible(false)
     this.fabric.updateHoop(hoop, false)
     this.entryExit.hide()                    // no UI overlays in thumbnail
+    this.stitchPoints.setVisible(false)      // hide debug dots in thumbnail
     this.viewport.moveCenter(cx, cy)
     this.viewport.setZoom(clampedScale, true)
     this.embroidery.setZoom(clampedScale)
@@ -374,10 +390,12 @@ export class ViewportController {
     // ── 6. Restore ────────────────────────────────────────────────────────────
     this.grid.setVisible(showGrid)
     this.fabric.updateHoop(hoop, showHoop)
+    this.stitchPoints.setVisible(showStitchPoints)
     this.viewport.moveCenter(savedCx, savedCy)
     this.viewport.setZoom(savedScale, true)
     this.embroidery.setZoom(savedScale)
     this.embroidery.rerenderAll(this.objects_)
+    this.syncStitchPoints()
     // Entry/exit markers are restored on the next syncSelection call from React.
 
     return this.app.view as HTMLCanvasElement
@@ -740,6 +758,11 @@ export class ViewportController {
 
   // ── Private utils ────────────────────────────────────────────────────────────
 
+  private syncStitchPoints() {
+    const compiled = compileMachineStitches(this.objects_)
+    this.stitchPoints.render(compiled, this.viewport.scale.x)
+  }
+
   private resumeNav() {
     if (!this.isDrawing_ && !this.isNodeEdit_ && !this.isPen_ && !this.isText_) {
       this.viewport.plugins.resume('drag')
@@ -754,6 +777,8 @@ export class ViewportController {
     this.nodeEdit.updateZoom(z)
     this.textLayer.setZoom(z)
     this.entryExit.setZoom(z)
+    this.stitchPoints.setZoom(z)
+    this.syncStitchPoints()
     // Re-render entry/exit markers at new zoom so diamond sizes stay constant
     const { selectedIds } = useEmbroideryStore.getState()
     if (selectedIds.length > 0) {
@@ -784,6 +809,7 @@ export class ViewportController {
     this.viewport.off('moved',  this.onMoved,  this)
     this.textLayer.destroy()
     this.entryExit.destroy()
+    this.stitchPoints.destroy()
     this.embroidery.destroy()
     this.viewport.destroy()
   }

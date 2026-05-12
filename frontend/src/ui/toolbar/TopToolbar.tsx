@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useCanvasStore, HOOP_SIZES, type HoopSize } from '../../store/canvasStore'
 import { useEmbroideryStore } from '../../store/embroideryStore'
 import { useProjectStore } from '../../store/projectStore'
+import { compileMachineStitches, flattenForExport } from '../../embroidery/MachineCompiler'
 
 const Separator = () => (
   <div className="w-px h-6 bg-studio-border mx-1.5 flex-shrink-0" />
@@ -52,16 +53,10 @@ export default function TopToolbar({ projectName, onSave }: { projectName?: stri
   const { stitchCount, loadDemo, objects, undo, redo, canUndo, canRedo } = useEmbroideryStore()
 
   const handleExport = async (format: string) => {
-    // Flatten all stitches from all objects into a single array
-    const allStitches: { x: number; y: number }[] = []
-    for (const obj of objects) {
-      if (obj.stitches) {
-        for (const [a, b] of obj.stitches) {
-          allStitches.push({ x: a.x, y: a.y })
-          allStitches.push({ x: b.x, y: b.y })
-        }
-      }
-    }
+    // Compile full machine stitch sequence (includes jump, trim, tie-in/off ordering)
+    // then flatten to the (x, y, type) triples the backend DST/PES generators expect.
+    const compiled = compileMachineStitches(objects)
+    const allStitches = flattenForExport(compiled)
     if (allStitches.length === 0) { alert('No stitches to export.'); return }
     try {
       await exportDesign(format, allStitches)
