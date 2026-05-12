@@ -4,6 +4,7 @@ import { useCanvasStore, HOOP_SIZES, type HoopSize } from '../../store/canvasSto
 import { useEmbroideryStore } from '../../store/embroideryStore'
 import { useProjectStore } from '../../store/projectStore'
 import { compileMachineStitches, flattenForExport } from '../../embroidery/MachineCompiler'
+import { exportDST } from '../../embroidery/export/DSTExporter'
 
 const Separator = () => (
   <div className="w-px h-6 bg-studio-border mx-1.5 flex-shrink-0" />
@@ -23,20 +24,13 @@ const TopBtn = ({
   </button>
 )
 
-const BACKEND = 'http://localhost:8000'
-
-async function exportDesign(format: string, stitches: { x: number; y: number }[]) {
-  const res = await fetch(`${BACKEND}/export`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ stitches, format }),
-  })
-  if (!res.ok) throw new Error(`Export failed: ${res.statusText}`)
-  const blob = await res.blob()
+/** Trigger a browser download of a Uint8Array as a file. */
+function downloadBytes(bytes: Uint8Array, filename: string, mime = 'application/octet-stream') {
+  const blob = new Blob([bytes.buffer as ArrayBuffer], { type: mime })
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
   a.href     = url
-  a.download = `embroidery.${format}`
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -52,16 +46,42 @@ export default function TopToolbar({ projectName, onSave }: { projectName?: stri
 
   const { stitchCount, loadDemo, objects, undo, redo, canUndo, canRedo } = useEmbroideryStore()
 
-  const handleExport = async (format: string) => {
-    // Compile full machine stitch sequence (includes jump, trim, tie-in/off ordering)
-    // then flatten to the (x, y, type) triples the backend DST/PES generators expect.
-    const compiled = compileMachineStitches(objects)
-    const allStitches = flattenForExport(compiled)
-    if (allStitches.length === 0) { alert('No stitches to export.'); return }
+  const handleExport = (format: string) => {
     try {
-      await exportDesign(format, allStitches)
+      const compiled   = compileMachineStitches(objects)
+      const flatStitches = flattenForExport(compiled)
+      if (flatStitches.length === 0) { alert('No stitches to export.'); return }
+
+      if (format === 'dst') {
+        const bytes = exportDST(flatStitches)
+        downloadBytes(bytes, 'embroidery.dst')
+        return
+      }
+
+      // Other formats (pes, vp3, jef…) still route to the Python backend
+      const BACKEND = 'http://localhost:8000'
+      fetch(`${BACKEND}/export`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ stitches: flatStitches, format }),
+      })
+        .then(res => {
+          if (!res.ok) throw new Error(`Export failed: ${res.statusText}`)
+          return res.blob()
+        })
+        .then(blob => {
+          const url = URL.createObjectURL(blob)
+          const a   = document.createElement('a')
+          a.href     = url
+          a.download = `embroidery.${format}`
+          a.click()
+          URL.revokeObjectURL(url)
+        })
+        .catch(err => alert(
+          `Export error: ${err instanceof Error ? err.message : err}\n\nMake sure the backend is running:\n  cd backend && pip install -r requirements.txt && uvicorn main:app --reload`
+        ))
     } catch (err) {
-      alert(`Export error: ${err instanceof Error ? err.message : err}\n\nMake sure the backend is running:\n  cd backend && pip install -r requirements.txt && uvicorn main:app --reload`)
+      alert(`Export error: ${err instanceof Error ? err.message : err}`)
     }
   }
 
